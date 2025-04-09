@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
-from memory_profiler import profile
+#from memory_profiler import profile
 from torch import Tensor, nn
 
 from .product_quantizer import ProductQuantizer

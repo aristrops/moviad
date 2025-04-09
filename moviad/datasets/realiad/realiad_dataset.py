@@ -6,7 +6,7 @@ import os
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 
-from moviad.datasets.common import IadDataset
+from moviad.datasets.iad_dataset import IadDataset
 from moviad.datasets.exceptions.exceptions import DatasetTooSmallToContaminateException
 from moviad.datasets.realiad.realiad_data import RealIadData
 from moviad.datasets.realiad.realiad_dataset_configurations import RealIadClassEnum, RealIadAnomalyClass
@@ -64,7 +64,7 @@ class RealIadDataset(IadDataset):
         contamination_set_size = int(math.floor(len(self.data) * ratio))
         contaminated_data_entries = [entry for entry in source.data.data if
                                      entry.anomaly_class != RealIadAnomalyClass.OK]
-        contaminated_image_entries = [image for image in source.data.images if
+        contaminated_image_entries = [image for image in source.data.data if
                                       image.anomaly_class != RealIadAnomalyClass.OK]
         if len(contaminated_data_entries) < contamination_set_size:
             raise DatasetTooSmallToContaminateException(
@@ -78,7 +78,7 @@ class RealIadDataset(IadDataset):
         self.data.data.extend(contaminated_data_entries)
         self.data.images.extend(contaminated_image_entries)
         source.data.data = [entry for entry in source.data.data if entry not in contaminated_data_entries]
-        source.data.images = [image for image in source.data.images if image not in contaminated_image_entries]
+        source.data.data = [image for image in source.data.data if image not in contaminated_image_entries]
         return contamination_set_size
 
     def partition(self, dataset: IadDataset, ratio: float) -> ('RealIadDataset', 'RealIadDataset'):

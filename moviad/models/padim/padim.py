@@ -3,7 +3,7 @@ from random import sample
 from typing import Mapping, Union, Any, Dict, List, Tuple
 
 import numpy as np
-from memory_profiler import profile
+#from profiler import profile
 from scipy.ndimage import gaussian_filter
 from scipy.spatial.distance import mahalanobis
 

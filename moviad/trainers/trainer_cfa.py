@@ -178,8 +178,6 @@ class TrainerCFA():
                 pxl_pro: {best_pxl_pro} \n
         """)
 
-        dirname = os.path.dirname(__file__)
-
         best_results = TrainerResult(
             img_roc=best_img_roc,
             pxl_roc=best_pxl_roc,

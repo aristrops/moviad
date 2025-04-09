@@ -16,7 +16,7 @@ from torchvision.transforms import transforms
 from torch.utils.data import Dataset
 
 from moviad.backbones.micronet.utils import compute_mask_contamination
-from moviad.datasets.common import IadDataset
+from moviad.datasets.iad_dataset import IadDataset
 from moviad.datasets.exceptions.exceptions import DatasetTooSmallToContaminateException
 from moviad.utilities.configurations import TaskType, Split, LabelName
 
@@ -88,15 +88,15 @@ class MVTecDataset(IadDataset):
     """
 
     def __init__(
-            self,
-            task: TaskType,
-            root: str,
-            category: str,
-            split: Split,
-            norm: bool = True,
-            img_size=(224, 224),
-            gt_mask_size: Optional[tuple] = None,
-            preload_imgs: bool = True,
+        self,
+        task: TaskType,
+        root: str,
+        category: str,
+        split: Split,
+        norm: bool = True,
+        img_size=(224, 224),
+        gt_mask_size: Optional[tuple] = None,
+        preload_imgs: bool = True,
     ) -> None:
         super(MVTecDataset)
 

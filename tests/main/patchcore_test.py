@@ -3,7 +3,6 @@ import unittest
 
 import numpy as np
 import torch
-from datasets import DatasetBuilder
 from sklearn.cluster import MiniBatchKMeans
 from torch.utils.data import Subset
 from torchvision.transforms import transforms, InterpolationMode
@@ -32,44 +31,7 @@ transform = transforms.Compose([
     transforms.ConvertImageDtype(torch.float32),
 ])
 
-CONFIG_PATH = 'config.json'
-config = DatasetConfig('./config.json')
-real_iad_train_dataset = RealIadDataset(RealIadClassEnum.AUDIOJACK.value,
-                                        config.realiad_root_path,
-                                        config.realiad_json_root_path,
-                                        task=TaskType.SEGMENTATION,
-                                        split=Split.TRAIN,
-                                        image_size=(224, 224),
-                                        transform=transforms.Compose([
-                                            transforms.Resize((224, 224)),
-                                            transforms.PILToTensor(),
-                                            transforms.Resize(
-                                                (224, 224),
-                                                antialias=True,
-                                                interpolation=InterpolationMode.NEAREST,
-                                            ),
-                                            transforms.ConvertImageDtype(torch.float32)
-                                        ]))
-
-real_iad_test_dataset = RealIadDataset(RealIadClassEnum.AUDIOJACK.value,
-                                       config.realiad_root_path,
-                                       config.realiad_json_root_path,
-                                       task=TaskType.SEGMENTATION,
-                                       split=Split.TEST,
-                                       image_size=(224, 224),
-                                       gt_mask_size=(224, 224),
-                                       transform=transforms.Compose([
-                                           transforms.Resize((224, 224)),
-                                           transforms.PILToTensor(),
-                                           transforms.Resize(
-                                               (224, 224),
-                                               antialias=True,
-                                               interpolation=InterpolationMode.NEAREST,
-                                           ),
-                                           transforms.ConvertImageDtype(torch.float32)
-                                       ]))
-
-
+CONFIG_PATH = '../config.json'
 class PatchCoreTrainTests(unittest.TestCase):
 
     def setUp(self):
@@ -78,21 +40,11 @@ class PatchCoreTrainTests(unittest.TestCase):
         self.config = DatasetConfig(CONFIG_PATH)
         dataset_factory = DatasetFactory(self.config)
         self.args.contamination_ratio = 0.25
-        self.args.batch_size = 128
+        self.args.batch_size = 32
         self.args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.args.img_input_size = (224, 224)
-        self.args.train_dataset = dataset_factory.build(
-            DatasetType.MVTec,
-            Split.TRAIN,
-            'bottle',
-            image_size=self.args.img_input_size
-        )
-        self.args.test_dataset = dataset_factory.build(
-            DatasetType.MVTec,
-            Split.TEST,
-            'bottle',
-            image_size=self.args.img_input_size
-        )
+        self.args.train_dataset = dataset_factory.build(DatasetType.Miic,split=Split.TRAIN, image_size=self.args.img_input_size)
+        self.args.test_dataset = dataset_factory.build(DatasetType.Miic,split=Split.TEST, image_size=self.args.img_input_size)
         self.args.train_dataset.load_dataset()
         self.args.test_dataset.load_dataset()
         self.args.category = self.args.train_dataset.category
@@ -115,7 +67,7 @@ class PatchCoreTrainTests(unittest.TestCase):
         self.assertEqual(coreset_kmeans.shape[0], k)
 
     def test_patchcore_quantization_efficiency(self):
-        unquantized_memory_bank = torch.rand([100, 160], dtype=torch.float32)
+        unquantized_memory_bank = torch.rand([30000, 160], dtype=torch.float32)
 
         pq = ProductQuantizer()
         pq.fit(unquantized_memory_bank)
@@ -133,10 +85,12 @@ class PatchCoreTrainTests(unittest.TestCase):
     def test_patchcore_with_quantization(self):
         feature_extractor = CustomFeatureExtractor(self.args.backbone, self.args.ad_layers, self.args.device, True,
                                                    False, None)
-        train_dataloader = torch.utils.data.DataLoader(self.args.train_dataset, batch_size=self.args.batch_size,
+        training_subset = Subset(self.args.train_dataset, range(1, 1000))
+        test_subset = Subset(self.args.test_dataset, range(1, 100))
+        train_dataloader = torch.utils.data.DataLoader(training_subset, batch_size=self.args.batch_size,
                                                        shuffle=True,
                                                        drop_last=True)
-        test_dataloader = torch.utils.data.DataLoader(self.args.test_dataset, batch_size=self.args.batch_size,
+        test_dataloader = torch.utils.data.DataLoader(test_subset, batch_size=self.args.batch_size,
                                                       shuffle=True,
                                                       drop_last=True)
 

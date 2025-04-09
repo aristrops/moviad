@@ -1,5 +1,5 @@
 from moviad.datasets.builder import DatasetFactory, DatasetConfig, DatasetType
-from moviad.datasets.common import IadDataset
+from moviad.datasets.iad_dataset import IadDataset
 from moviad.utilities.configurations import Split
 
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from tqdm import tqdm
 from moviad.common.args import Args
 from moviad.datasets.builder import DatasetFactory
-from moviad.datasets.common import IadDataset
+from moviad.datasets.iad_dataset import IadDataset
 from moviad.entrypoints.common import load_datasets
 from moviad.trainers.batched_trainer_patchcore import BatchPatchCoreTrainer
 from moviad.utilities.custom_feature_extractor_trimmed import CustomFeatureExtractor

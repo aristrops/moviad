@@ -1,7 +1,7 @@
 import json
 import os
 from enum import EnumType
-from moviad.datasets.common import IadDataset
+from moviad.datasets.iad_dataset import IadDataset
 from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset
 from moviad.datasets.realiad.realiad_dataset import RealIadDataset
 from moviad.datasets.visa.visa_dataset import VisaDataset

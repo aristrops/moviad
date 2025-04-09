@@ -6,7 +6,7 @@ import torch
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 
-from moviad.datasets.common import IadDataset
+from moviad.datasets.iad_dataset import IadDataset
 from moviad.datasets.exceptions.exceptions import DatasetTooSmallToContaminateException
 from moviad.datasets.visa.visa_data import VisaData, VisaAnomalyClass
 from moviad.datasets.visa.visa_dataset_configurations import VisaDatasetCategory
@@ -66,13 +66,13 @@ class VisaDataset(IadDataset):
 
         torch.manual_seed(seed)
         contamination_set_size = int(len(self.data) * ratio)
-        contaminated_entries = [entry for entry in source.data.images if entry.label == VisaAnomalyClass.ANOMALY]
+        contaminated_entries = [entry for entry in source.data.data if entry.label == VisaAnomalyClass.ANOMALY]
         if len(contaminated_entries) < contamination_set_size:
             raise DatasetTooSmallToContaminateException(f"Source dataset does not have enough contaminated entries to contaminate the dataset. "
                              f"Found {len(contaminated_entries)} entries, but needed {contamination_set_size} entries")
         contaminated_entries = np.random.choice(contaminated_entries, contamination_set_size, replace=False).tolist()
         self.data.images.extend(contaminated_entries)
-        source.data.images = [entry for entry in source.data.images if entry not in contaminated_entries]
+        source.data.data = [entry for entry in source.data.data if entry not in contaminated_entries]
         return contamination_set_size
 
 

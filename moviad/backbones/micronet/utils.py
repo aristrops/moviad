@@ -1,13 +1,13 @@
 import numpy as np
 import torch
-from typing import Dict
+from typing import Dict, Union
 import torch.nn as nn
 from PIL.Image import Image
 
 
 #from icecream import ic
 
-def compute_mask_contamination(mask: torch.Tensor | Image) -> float:
+def compute_mask_contamination(mask: Union[torch.Tensor, Image]) -> float:
     if isinstance(mask, Image):
         mask = torch.tensor(np.array(mask))
     contaminated_pixels = torch.nonzero(mask).shape[0]

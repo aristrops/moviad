@@ -1,6 +1,6 @@
 import torch
 
-from moviad.datasets.common import IadDataset
+from moviad.datasets.iad_dataset import IadDataset
 
 
 class Trainer:

@@ -1,3 +1,5 @@
+from typing import Union
+
 import faiss
 import numpy as np
 import torch
@@ -12,7 +14,7 @@ class ProductQuantizer:
         self.centroid_bits = centroids_per_subspace
         self.subspaces = subspaces
 
-    def fit(self, input: torch.Tensor | np.ndarray, dim=1) -> None:
+    def fit(self, input : Union[torch.Tensor, np.ndarray], dim=1) -> None:
         if isinstance(input, torch.Tensor):
             input = input.cpu().numpy()
         self.dim = dim
@@ -23,7 +25,7 @@ class ProductQuantizer:
         self.quantizer.train(input)
         self.quantizer.add(input)
 
-    def encode(self, input: torch.Tensor | np.ndarray, dim = 0) -> torch.Tensor:
+    def encode(self, input : Union[torch.Tensor, np.ndarray], dim = 0) -> torch.Tensor:
         if isinstance(input, torch.Tensor):
             input = input.cpu().numpy()
 
@@ -37,7 +39,7 @@ class ProductQuantizer:
 
         return torch.tensor(compressed, dtype=torch.float32)
 
-    def decode(self, input: torch.Tensor | np.ndarray) -> torch.Tensor:
+    def decode(self, input : Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
         if isinstance(input, torch.Tensor):
             input = input.cpu().numpy()
 

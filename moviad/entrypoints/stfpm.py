@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 from moviad.common.args import Args
-from moviad.datasets.common import IadDataset
+from moviad.datasets.iad_dataset import IadDataset
 from moviad.entrypoints.common import load_datasets
 from moviad.models.stfpm.stfpm import Stfpm
 from moviad.trainers.trainer_stfpm import train_param_grid_search

@@ -243,7 +243,7 @@ class Stfpm(nn.Module):
         return super().load_state_dict(state_dict, strict=strict)
 
     @staticmethod
-    def __layers_to_idxs__(layers: list[int], model=None):
+    def __layers_to_idxs__(layers: List[int], model=None):
         """
         Defaults to converting the layer strings to integers, but can be extended to
         convert the layer names to indexes for specific models.

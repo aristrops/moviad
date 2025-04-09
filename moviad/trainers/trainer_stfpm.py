@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
 
-from ..datasets.common import IadDataset
+from ..datasets.iad_dataset import IadDataset
 from ..models.stfpm.stfpm import Stfpm
 from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset
 from ..utilities.configurations import TaskType, Split

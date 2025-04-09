@@ -1,0 +1,123 @@
+{
+  "settings": {
+    "debug": true
+  },
+  "datasets": {
+    "realiad": {
+      "root_path": "E:/VisualAnomalyDetection/datasets/Real-IAD/realiad_256",
+      "json_root_path": "E:/VisualAnomalyDetection/datasets/Real-IAD/realiad_jsons"
+    },
+    "visa": {
+      "root_path": "E:/VisualAnomalyDetection/datasets/visa",
+      "csv_path": "E:/VisualAnomalyDetection/datasets/visa/split_csv/1cls.csv"
+    },
+    "mvtec": {
+      "root_path": "E:/VisualAnomalyDetection/datasets/mvtec"
+    },
+    "miic": {
+        "training_root_path": "E:/VisualAnomalyDetection/datasets/miic/Anomaly_train",
+        "test_abnormal_image_root_path": "E:/VisualAnomalyDetection/datasets/miic/Anomaly_test/abnormal_img",
+        "test_normal_image_root_path": "E:/VisualAnomalyDetection/datasets/miic/Anomaly_test/normal_img",
+        "test_abnormal_mask_root_path": "E:/VisualAnomalyDetection/datasets/miic/Anomaly_test/abnormal_mask",
+        "test_abnormal_bounding_box_root_path": "E:/VisualAnomalyDetection/datasets/miic/Anomaly_test/abnormal_bbox"
+    }
+  },
+  "benchmark": [
+    {
+      "model": "padim",
+      "datasets": [
+        {"type": "visa", "class": "candle"},
+        {"type": "visa", "class": "capsules"},
+        {"type": "visa", "class": "cashew"},
+        {"type": "visa", "class": "chewinggum"},
+        {"type": "visa", "class": "fryum"},
+        {"type": "visa", "class": "macaroni1"},
+        {"type": "visa", "class": "macaroni2"},
+        {"type": "visa", "class": "pcb1"},
+        {"type": "visa", "class": "pcb2"},
+        {"type": "visa", "class": "pcb3"},
+        {"type": "visa", "class": "pcb4"},
+        {"type": "visa", "class": "pipe_fryum"}
+      ],
+      "backbones": [
+        {
+          "mobilenet_v2": [
+            "features.4",
+            "features.7",
+            "features.10"
+          ]
+        },
+        {
+          "micronet-m1": [
+            2,
+            4,
+            5
+          ]
+        },
+        {
+          "mcunet-in3": [
+            3,
+            6,
+            9
+          ]
+        },
+        {
+          "resnet18": [
+            "layer1",
+            "layer2",
+            "layer3"
+          ]
+        }
+      ],
+      "contamination" : [0, 0.1, 0.15, 0.2]
+    },
+    {
+      "model": "cfa",
+      "datasets": [
+        {"type": "visa", "class": "candle"},
+        {"type": "visa", "class": "capsules"},
+        {"type": "visa", "class": "cashew"},
+        {"type": "visa", "class": "chewinggum"},
+        {"type": "visa", "class": "fryum"},
+        {"type": "visa", "class": "macaroni1"},
+        {"type": "visa", "class": "macaroni2"},
+        {"type": "visa", "class": "pcb1"},
+        {"type": "visa", "class": "pcb2"},
+        {"type": "visa", "class": "pcb3"},
+        {"type": "visa", "class": "pcb4"},
+        {"type": "visa", "class": "pipe_fryum"}
+        ],
+      "backbones": [
+        {
+          "mobilenet_v2": [
+            "features.4",
+            "features.7",
+            "features.10"
+          ]
+        },
+        {
+          "micronet-m1": [
+            2,
+            4,
+            5
+          ]
+        },
+        {
+          "mcunet-in3": [
+            3,
+            6,
+            9
+          ]
+        },
+        {
+          "resnet18": [
+            "layer1",
+            "layer2",
+            "layer3"
+          ]
+        }
+      ],
+      "contamination" : [0, 0.1, 0.15, 0.2]
+    }
+  ]
+}

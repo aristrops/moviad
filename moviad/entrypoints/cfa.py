@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from moviad.common.args import Args
 from moviad.datasets.builder import DatasetFactory, DatasetType, DatasetConfig
-from moviad.datasets.common import IadDataset
+from moviad.datasets.iad_dataset import IadDataset
 from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset
 from moviad.entrypoints.common import load_datasets
 from moviad.utilities.custom_feature_extractor_trimmed import CustomFeatureExtractor
