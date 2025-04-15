@@ -19,6 +19,7 @@ from moviad.backbones.micronet.utils import compute_mask_contamination
 from moviad.datasets.iad_dataset import IadDataset
 from moviad.datasets.exceptions.exceptions import DatasetTooSmallToContaminateException
 from moviad.utilities.configurations import TaskType, Split, LabelName
+from moviad.models.patchcore.features_dataset import CustomFeatureCompressor
 
 IMG_EXTENSIONS = (".png", ".PNG")
 
@@ -93,6 +94,10 @@ class MVTecDataset(IadDataset):
         root: str,
         category: str,
         split: Split,
+        compressor: CustomFeatureCompressor = None,
+        apply_compression: bool = False,
+        quality: int = 50,
+        compression_method = "JPEG",
         norm: bool = True,
         img_size=(224, 224),
         gt_mask_size: Optional[tuple] = None,
@@ -110,9 +115,12 @@ class MVTecDataset(IadDataset):
         self.split = split
         self.samples: pd.DataFrame = None
         self.preload_imgs = preload_imgs
+        self.apply_compression = apply_compression
+        self.quality = quality
+        self.compression_method = compression_method
 
         if norm:
-            t_list = [
+            t_list = [lambda img: compressor.compress_image(img, compression_method=self.compression_method, quality = self.quality, apply = self.apply_compression),
                 transforms.ToTensor(),
                 transforms.Resize(img_size, antialias=True),
                 transforms.Normalize(
@@ -120,7 +128,7 @@ class MVTecDataset(IadDataset):
                 ),
             ]
         else:
-            t_list = [
+            t_list = [lambda img: compressor.compress_image(img, compression_method = self.compression_method, quality = self.quality, apply = self.apply_compression),
                 transforms.ToTensor(),
                 transforms.Resize(img_size, antialias=True),
             ]
@@ -160,6 +168,7 @@ class MVTecDataset(IadDataset):
 
     def contains(self, item) -> bool:
         return self.samples['image_path'].eq(item['image_path']).any()
+    
     def load_dataset(self):
 
         root = Path(self.root_category)

@@ -10,6 +10,7 @@ import sys
 
 from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset
 from moviad.utilities.custom_feature_extractor_trimmed import CustomFeatureExtractor
+from moviad.models.patchcore.features_dataset import CustomFeatureCompressor
 from moviad.utilities.configurations import TaskType
 from moviad.models.patchcore.product_quantizer import ProductQuantizer
 
@@ -42,9 +43,8 @@ def compress_features(dataset_path, categories, device, backbone, layer_idxs, co
             k = int(C * ratio) #number of channels to keep
             sampled_idxs = torch.tensor(random.sample(range(C), k), device = f.device)
             sampled_f = torch.index_select(f, dim = 1, index = sampled_idxs)
-            reduced_features.append(sampled_f.flatten())
-        return torch.cat(reduced_features)
-
+            reduced_features.append(sampled_f)
+        return reduced_features
     
     print(f"Compressing images using {compression_method} with quality of {quality}")
     print(f"Casting features to {feature_dtype}")
@@ -52,8 +52,10 @@ def compress_features(dataset_path, categories, device, backbone, layer_idxs, co
     for category in categories:
         print(f"Processing {category} category")
 
+        feature_compressor = CustomFeatureCompressor(backbone, layer_idxs, device)
+
         #load dataset
-        train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train")
+        train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train", compressor = feature_compressor, apply_compression=False)
         train_dataset.load_dataset()
         dataset_images = train_dataset.samples.sample(len(train_dataset))
         print(f"Number of images to compress: {len(train_dataset)}")
@@ -64,7 +66,7 @@ def compress_features(dataset_path, categories, device, backbone, layer_idxs, co
 
         sizes = {"original": [], "compressed": [], "features": [], "quantized_features": []}
 
-        all_features = []
+        all_data, compressed_features = [], []
 
         #collect features
         print("Extracting features...")
@@ -78,11 +80,11 @@ def compress_features(dataset_path, categories, device, backbone, layer_idxs, co
             #feature extraction
             features = feature_extractor(image_tensor) #list of [1, C, H, W]
             if random_sampling:
-                flat_features = sample_channels(features, sampling_ratio).to(dtype = feature_dtype)
-            else:
-                flat_features = torch.cat([f.flatten() for f in features]).to(dtype=feature_dtype)
+                features = sample_channels(features, sampling_ratio)
+                compressed_features.append(features)
+            flat_features = torch.cat([f.flatten() for f in features]).to(dtype=feature_dtype)
             features_list.append(flat_features.cpu())
-            all_features.append((original_image, features, flat_features))
+            all_data.append((original_image, features, flat_features))
 
             if pq_method in ["layer", "layer-channel"]:
                 vectors = get_feature_vectors(features, pq_method)
@@ -106,7 +108,7 @@ def compress_features(dataset_path, categories, device, backbone, layer_idxs, co
 
         #encode and measure sizes
         print("Encoding features and measuring sizes...")
-        for img, features, flat_features in all_features:
+        for img, features, flat_features in all_data:
             #compute the original size
             original_size = os.path.getsize(image_path)
             sizes["original"].append(original_size)
@@ -153,9 +155,15 @@ def compress_features(dataset_path, categories, device, backbone, layer_idxs, co
             print(f"Average PQ feature size: {int(np.mean(sizes["quantized_features"]))} bytes")
             print_comparisons(f"Compression ratio using PQ features", "features", "quantized_features")
         
-        print(f"Size of the product quantizers: {sys.getsizeof(trained_quantizers)} bytes")
+        features_list = [data[1] for data in all_data]
 
-    return
+        #print(f"Size of the product quantizers: {sys.getsizeof(trained_quantizers)} bytes")
+        print(f"Shape of compressed features: {compressed_features[0][0].shape}")
+        #print(f"Shape of standard features: {features_list[0].shape}")
+        print(f"Number of compressed features: {len(compressed_features)}")
+        print(f"Number of standard features: {len(features_list)}")
+    
+    return compressed_features
 
 
 

@@ -19,6 +19,7 @@ from ...models.patchcore.anomaly_map import AnomalyMapGenerator
 from ...utilities.custom_feature_extractor_trimmed import CustomFeatureExtractor
 from ...utilities.get_sizes import *
 
+
 class PatchCore(nn.Module):
     """Patchcore Module."""
 
@@ -29,6 +30,7 @@ class PatchCore(nn.Module):
         feature_extractor: CustomFeatureExtractor,
         num_neighbors: int = 9,
         apply_quantization: bool = False,
+        compression_method: str = None,
         k: int = 10000
     ) -> None:
 
@@ -57,6 +59,8 @@ class PatchCore(nn.Module):
         self.apply_quantization = apply_quantization
         if apply_quantization:
             self.product_quantizer = ProductQuantizer()
+        self.compression_method = compression_method
+
 
     def load(self, model_state_dict_patch, quantizer_state_dict_path):
         """
@@ -92,12 +96,18 @@ class PatchCore(nn.Module):
 
         #extract the features for the input tensor
         self.memory_bank.to(self.device)
-        with torch.no_grad():
-            features = self.feature_extractor(input_tensor.to(self.device))
+        if self.compression_method is not None:
+            features = input_tensor
+        else:
+            with torch.no_grad():
+                features = self.feature_extractor(input_tensor.to(self.device))
 
         #concatenate the embeddings
         if isinstance(features, dict):
             features = list(features.values())
+        
+        print(f"Number of features: {len(features)}")
+        print(f"Shape of a feature: {features[2].shape}")
 
         # Apply smoothing (3x3 average pooling) to the features.
         smoothing = torch.nn.AvgPool2d(kernel_size=3, stride=1, padding=1)
@@ -113,7 +123,7 @@ class PatchCore(nn.Module):
         # Apply resize function for all input tensors.
         features = [resizer(f) for f in features]
 
-        embedding =  torch.cat(features, dim=1)
+        embedding = torch.cat(features, dim=1)
 
         batch_size, _, width, height = embedding.shape
         embedding = self.reshape_embedding(embedding)

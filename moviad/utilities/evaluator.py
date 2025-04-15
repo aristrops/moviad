@@ -50,7 +50,7 @@ class Evaluator:
         for images, labels, masks, path in tqdm(self.test_dataloader, desc="Eval"):
             # get anomaly map and score
             with torch.no_grad():
-                anomaly_maps, anomaly_scores = model(images.to(self.device))
+                anomaly_maps, anomaly_scores = model(images)
 
             if anomaly_maps.shape[2:] != masks.shape[2:]:
                 raise Exception(

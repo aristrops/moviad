@@ -53,9 +53,11 @@ class TrainerPatchCore():
                 self.logger.watch(self.patchore_model)
             print("Embedding Extraction:")
             for batch in tqdm(iter(self.train_dataloader)):
-
                 if isinstance(batch, tuple):
                     embedding = self.patchore_model(batch[0].to(self.device))
+                if isinstance(batch, list):
+                    batch = [b.to(self.device) for b in batch]
+                    embedding = self.patchore_model(batch)
                 else:
                     embedding = self.patchore_model(batch.to(self.device))
 
