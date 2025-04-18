@@ -171,6 +171,9 @@ class MVTecDataset(IadDataset):
     
     def load_dataset(self):
 
+        if self.apply_compression:
+            print(f"Applying {self.compression_method} image compression with quality of {self.quality}")
+
         root = Path(self.root_category)
 
         samples_list = [

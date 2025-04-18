@@ -143,25 +143,25 @@ def compress_features(dataset_path, categories, device, backbone, layer_idxs, co
             comparison = sum(sizes[key2]) if key2 else base
             print(f"{label}: {1-(comparison/base): .2%}")
         
+        avg_original_size = np.mean(sizes["original"])
+        avg_compressed_size = np.mean(sizes["compressed"])
+        avg_feature_size = np.mean(sizes["features"])
+
         #print results
-        #print(f"Average original size: {int(avg_original_size)} bytes")
-        #print(f"Average compressed size: {int(avg_compressed_size)} bytes")
+        print(f"Average original size: {int(avg_original_size)/1000} kilobytes")
+        print(f"Average compressed size: {int(avg_compressed_size)/1000} kilobytes")
+        print(f"Average feature size: {int(avg_feature_size)/1000} kilobytes")
         print_comparisons(f"Compression ratio of images", "original", "compressed")
 
-        print(f"Average feature size: {int(np.mean(sizes["features"]))} bytes")
         print_comparisons(f"Compression ratio of features/images", "original", "features")
 
         if pq_method:
-            print(f"Average PQ feature size: {int(np.mean(sizes["quantized_features"]))} bytes")
+            print(f"Average PQ feature size: {int(np.mean(sizes['quantized_features']))} bytes")
             print_comparisons(f"Compression ratio using PQ features", "features", "quantized_features")
         
         features_list = [data[1] for data in all_data]
 
         #print(f"Size of the product quantizers: {sys.getsizeof(trained_quantizers)} bytes")
-        print(f"Shape of compressed features: {compressed_features[0][0].shape}")
-        #print(f"Shape of standard features: {features_list[0].shape}")
-        print(f"Number of compressed features: {len(compressed_features)}")
-        print(f"Number of standard features: {len(features_list)}")
     
     return compressed_features
 

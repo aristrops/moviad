@@ -7,6 +7,7 @@ import numpy as np
 import torchvision.transforms as T
 from PIL import Image
 from torch.utils.data import Dataset
+import torchvision.transforms.functional as TF
 from tqdm import tqdm
 import copy
 
@@ -18,8 +19,10 @@ class CustomFeatureCompressor():
         self,
         device: torch.device,
         quantizer,
-        compression_method: str,
-        compression_ratio: int = 0.25,
+        image_compression_method: str,
+        feature_compression_method: str,
+        quality: int,
+        compression_ratio: int,
         # pq_subspaces: int,
         # centroids_per_subspace: int,
         pq_method: str = None,
@@ -27,7 +30,9 @@ class CustomFeatureCompressor():
         
         self.device = device
         self.quantizer = quantizer
-        self.compression_method = compression_method
+        self.image_compression_method = image_compression_method
+        self.feature_compression_method = feature_compression_method
+        self.quality = quality
         self.compression_ratio = compression_ratio
         self.pq_method = pq_method
         # self.pq_subspaces = pq_subspaces
@@ -39,7 +44,6 @@ class CustomFeatureCompressor():
     
     def get_and_compress_features(self, dataset, feature_extractor):
         all_compressed_features = None
-        compressed_features_per_image = []
         for image in dataset:
             #extract features
             if isinstance (image, tuple): #test set
@@ -47,28 +51,31 @@ class CustomFeatureCompressor():
             else:
                 features = feature_extractor(image.unsqueeze(0).to(self.device))
             
+            if "quantize" in self.feature_compression_method:
+                print("Quantizing features...")
+                features = [f.to(dtype = torch.uint8) for f in features]
+            
             #random sampling
-            if self.compression_method == "random_sampling":
+            if "random_sampling" in self.feature_compression_method:
                 features = self.sample_channels(features, compression_ratio=self.compression_ratio) #list of [1, C, H, W]
-                if all_compressed_features is None:
-                    all_compressed_features = [[] for _ in range(len(features))]
-                for i, f in enumerate(features):
-                    all_compressed_features[i].append(f.squeeze(0).cpu())
+                if "jpeg_webp_for_features" in self.feature_compression_method:
+                    features = self.compress_features_with_codec(features, self.image_compression_method, self.quality)
 
             #product quantization
-            if self.compression_method == "pq":
+            elif self.feature_compression_method == "pq":
                 pq_features = self.product_quantization(features)
-                decoded_features = self.decompress_features(pq_features)
-                if all_compressed_features is None:
-                    all_compressed_features = [[] for _ in range(len(decoded_features))]
-                for i, f in enumerate(decoded_features):
-                    all_compressed_features[i].append(f.squeeze(0).cpu())
+                features = self.decompress_features(pq_features)
+
+            if all_compressed_features is None:
+                all_compressed_features = [[] for _ in range(len(features))]
+            for i, f in enumerate(features):
+                all_compressed_features[i].append(f.squeeze(0).cpu())               
             
         return [torch.stack(image_features, dim = 0) for image_features in all_compressed_features]
 
     
     #image compression
-    def compress_image(self, image, compression_method = "JPEG", quality = 50, apply = False):
+    def compress_image(self, image, quality, compression_method, apply = False):
         if not apply:
             return image
         #print(f"Compressing images using {compression_method} with quality of {quality}...")
@@ -78,6 +85,39 @@ class CustomFeatureCompressor():
         compressed_io.seek(0)
 
         return Image.open(compressed_io)
+
+
+    def compress_features_with_codec(self, features, compression_method, quality):
+        print(f"Compressing features with {compression_method} and quality {quality}")
+        compressed_features = []
+        for f in features:
+            B, C, H, W = f.shape
+            f = f.squeeze(0) #[C, H, W]
+
+            f_min, f_max = f.min(), f.max() 
+            f = (f - f_min) / (f_max - f_min + 1e-8) #normalize to [0, 255]
+            f = (f * 255).clamp(0, 255).byte()
+
+            reconstructed_channels = []
+
+            for c in range(C):
+                channel = f[c] #[H, W]
+
+                img = TF.to_pil_image(channel)
+
+                compressed_image = self.compress_image(img, quality, compression_method, apply = True)
+                decompressed_image = compressed_image.convert("L") #grayscale
+
+                #convert back to tensor
+                decompressed_tensor = TF.to_tensor(decompressed_image).squeeze(0) #[H, W]
+                reconstructed_channels.append(decompressed_tensor)
+
+            #stack back to [C, H, W]
+            reconstructed_tensor = torch.stack(reconstructed_channels, dim = 0).unsqueeze(0).to(self.device) #[1, C, H, W]
+        
+            compressed_features.append(reconstructed_tensor)
+
+        return compressed_features
 
 
     #random projection of channels
@@ -109,7 +149,7 @@ class CustomFeatureCompressor():
                 features = feature_extractor(image[0].unsqueeze(0).to(self.device))
             else:
                 features = feature_extractor(image.unsqueeze(0).to(self.device))
-            
+
             #store original shapes for decoding
             self.original_shapes = [f.shape[1:] for f in features]
             
@@ -121,7 +161,7 @@ class CustomFeatureCompressor():
                 for i, feature_map in enumerate(features):
 
                     if self.pq_method == "layer":
-                        feature_vectors.setdefault(i, []).append(feature_map.squeeze(0).flatten().numpy())
+                        feature_vectors.setdefault(i, []).append(feature_map.squeeze(0).cpu().flatten())
                     
                     elif self.pq_method == "layer-channel":
                         feature_map = feature_map.squeeze(0).cpu()
@@ -160,20 +200,20 @@ class CustomFeatureCompressor():
             #pq_compressed.append(torch.tensor(encoded))
             pq_compressed = encoded
         
-        elif self.pq_method == "layer":
+        elif self.pq_method == "layer" or self.pq_method == "layer-channel":
             for i, feature_map in enumerate(features):
                 feature_map = feature_map.squeeze(0).cpu()
-                feature_map = feature_map.flatten().unsqueeze(0).numpy()
-                encoded = self.trained_quantizers[i].encode(feature_map)
-                pq_compressed.append(encoded)
-
-        #     elif self.pq_method == "layer-channel":
-        #         encoded_channels = []
-        #         for channel in feature_map:
-        #             vector = channel.reshape(1, -1).numpy()
-        #             encoded = self.trained_quantizers[i].encode(vector)
-        #             encoded_channels.append(torch.tensor(encoded))
-        #         pq_compressed.append(torch.stack(encoded_channels))
+                if self.pq_method == "layer":
+                    feature_map = feature_map.flatten().unsqueeze(0).numpy()
+                    encoded = self.trained_quantizers[i].encode(feature_map)
+                    pq_compressed.append(encoded)
+                else:
+                    encoded_channels = []
+                    for channel in feature_map:
+                        vec = channel.reshape(1, -1).numpy()
+                        encoded = self.trained_quantizers[i].encode(vec)
+                        encoded_channels.append(torch.tensor(encoded))
+                    pq_compressed.append(torch.stack(encoded_channels))
 
         return pq_compressed
         
@@ -190,12 +230,23 @@ class CustomFeatureCompressor():
                 decoded_features.append(segment.reshape(C, H, W))
                 offset += num_elements
 
-        
         elif self.pq_method == "layer":
             for i, (layer_vector, shapes) in enumerate(zip(compressed_features, self.original_shapes)):
                 decoded = self.trained_quantizers[i].decode(layer_vector).squeeze(0)
                 C, H, W = shapes
                 decoded_features.append(decoded.reshape(C, H, W))
+        
+        elif self.pq_method == "layer-channel":
+            for i, (layer_channels, shapes) in enumerate(zip(compressed_features, self.original_shapes)):
+                C, H, W = shapes
+                decoded_channels = []
+                for encoded_vector in layer_channels:
+                    decoded = self.trained_quantizers[i].decode(encoded_vector).squeeze(0)
+                    decoded_channels.append(decoded)
+                
+                decoded_tensor = torch.stack(decoded_channels, dim = 0)
+                decoded_tensor = decoded_tensor.reshape(C, H, W)
+                decoded_features.append(decoded_tensor)
 
         return decoded_features
         

@@ -98,6 +98,7 @@ class PatchCore(nn.Module):
         self.memory_bank.to(self.device)
         if self.compression_method is not None:
             features = input_tensor
+            features = [f.to(dtype = torch.float32) for f in features]
         else:
             with torch.no_grad():
                 features = self.feature_extractor(input_tensor.to(self.device))
@@ -105,9 +106,6 @@ class PatchCore(nn.Module):
         #concatenate the embeddings
         if isinstance(features, dict):
             features = list(features.values())
-        
-        print(f"Number of features: {len(features)}")
-        print(f"Shape of a feature: {features[2].shape}")
 
         # Apply smoothing (3x3 average pooling) to the features.
         smoothing = torch.nn.AvgPool2d(kernel_size=3, stride=1, padding=1)

@@ -21,52 +21,55 @@ from moviad.models.patchcore.feature_compressor import CustomFeatureCompressor
 from moviad.models.patchcore.product_quantizer import ProductQuantizer
 
 
-def train_patchcore(dataset_path: str, category: str, backbone: str, ad_layers: list, compression_method, pq_method, save_path: str,
+def train_patchcore(dataset_path: str, category: str, backbone: str, ad_layers: list, compress_images, quality, image_compression_method,
+                    feature_compression_method, sampling_ratio, pq_method, save_path: str,
                     device: torch.device, max_dataset_size: int = None):
     # initialize the feature extractor
     feature_extractor = CustomFeatureExtractor(backbone, ad_layers, device, True, False, None)
     feature_quantizer = ProductQuantizer()
-    compressor = CustomFeatureCompressor(device, feature_quantizer, compression_method = compression_method, pq_method = pq_method)
+    compressor = CustomFeatureCompressor(device, feature_quantizer, image_compression_method=image_compression_method, feature_compression_method = feature_compression_method, 
+                                         quality = quality,compression_ratio = sampling_ratio, pq_method = pq_method)
 
     print(f"Training Pathcore for category: {category} \n")
 
     # define training and test datasets
-    train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train", compressor=compressor, apply_compression=False, quality=75, compression_method="WEBP")
+
+    train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train", compressor=compressor, apply_compression=compress_images, quality=quality, compression_method=image_compression_method)
     train_dataset.load_dataset()
     if max_dataset_size is not None:
         train_dataset = torch.utils.data.Subset(train_dataset, range(max_dataset_size))
-    if compression_method == "random_sampling":
+    if "random_sampling" in feature_compression_method or "quantize" in feature_compression_method:
         train_dataset = CompressedFeaturesDataset(feature_extractor, train_dataset, compressor, device = device)
-    if compression_method == "pq":
+    if "pq" in feature_compression_method:
         feature_vectors = compressor.collect_feature_vectors(train_dataset, feature_extractor)
         compressor.fit_quantizers(feature_vectors)
         train_dataset = CompressedFeaturesDataset(feature_extractor, train_dataset, compressor, device = device)
     print(f"Shape of a feature: {train_dataset[0][1].shape}")
     print(f"Length train dataset: {len(train_dataset)}")
-    if compression_method is not None:
+    if feature_compression_method is not None:
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=train_dataset.collate_fn)
     else:
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True)
 
-    test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test", compressor=compressor, apply_compression=False, quality = 75, compression_method="WEBP")
+    test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test", compressor=compressor, apply_compression=compress_images, quality=quality, compression_method=image_compression_method)
     test_dataset.load_dataset()
     if max_dataset_size is not None:
         test_dataset = torch.utils.data.Subset(test_dataset, range(max_dataset_size))
-    if compression_method == "random_sampling":
+    if "random_sampling" in feature_compression_method or "quantize" in feature_compression_method:
         test_dataset = CompressedFeaturesDataset(feature_extractor, test_dataset, compressor, device, split="test")
-    if compression_method == "pq":
+    if "pq" in feature_compression_method:
         feature_vectors = compressor.collect_feature_vectors(test_dataset, feature_extractor)
         compressor.fit_quantizers(feature_vectors)
         test_dataset = CompressedFeaturesDataset(feature_extractor, test_dataset, compressor, device = device, split="test")
     print(f"Length test dataset: {len(test_dataset)}")
-    if compression_method is not None:
+    if feature_compression_method is not None:
         test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True, collate_fn=test_dataset.collate_fn)
     else:
         test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
 
 
     # define the model
-    patchcore = PatchCore(device, input_size=(224, 224), feature_extractor=feature_extractor, compression_method = compression_method)
+    patchcore = PatchCore(device, input_size=(224, 224), feature_extractor=feature_extractor, compression_method = feature_compression_method)
     patchcore.to(device)
     patchcore.train()
 
@@ -144,7 +147,11 @@ def main():
     parser.add_argument("--category", type=str, help="Dataset category to test")
     parser.add_argument("--backbone", type=str, help="Model backbone")
     parser.add_argument("--ad_layers", type=str, nargs="+", help="List of ad layers")
-    parser.add_argument("--compression_method", type = str, default= None, help = "How to compress features before running the algorithm")
+    parser.add_argument("--compress_images", action = "store_true", help = "Compress images using JPEG or WEBP")
+    parser.add_argument("--quality", type = int, default= 50, help = "Compression quality of images")
+    parser.add_argument("--image_compression_method", type = str, default= "JPEG", help = "Method for image compression")
+    parser.add_argument("--feature_compression_method", type = str, default= None, nargs = "+", help = "Method for feature compression")
+    parser.add_argument("--sampling_ratio", type = float, default= 0.25, help = "Sampling ratio for random projection of features")
     parser.add_argument("--pq_method", type = str, default= None, help = "Which PQ method to use")
     parser.add_argument("--save_path", type=str, default=None, help="Path of the .pt file where to save the model")
     parser.add_argument("--visual_test_path", type=str, default=None,
@@ -159,9 +166,9 @@ def main():
     device = torch.device(args.device)
 
     if args.mode == "train":
-        train_patchcore(args.dataset_path, args.category, args.backbone, args.ad_layers, args.compression_method, args.pq_method, args.save_path, device)
+        train_patchcore(args.dataset_path, args.category, args.backbone, args.ad_layers, args.compress_images, args.quality, args.image_compression_method, args.feature_compression_method, args.sampling_ratio, args.pq_method, args.save_path, device)
     elif args.mode == "test":
-        test_patchcore(args.dataset_path, args.category, args.backbone, args.ad_layers, args.compression_method, args.pq_method, args.save_path, device, args.visual_test_path)
+        test_patchcore(args.dataset_path, args.category, args.backbone, args.ad_layers, args.compress_images, args.quality, args.image_compression_method, args.feature_compression_method, args.sampling_ratio, args.pq_method, args.save_path, device, args.visual_test_path)
 
 
 if __name__ == "__main__":
