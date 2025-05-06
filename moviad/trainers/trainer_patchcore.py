@@ -1,6 +1,7 @@
 import wandb
 import torch
 from sklearn.cluster import MiniBatchKMeans
+import time
 
 from tqdm import tqdm
 import os
@@ -48,7 +49,6 @@ class TrainerPatchCore():
         embeddings = []
 
         with torch.no_grad():
-
             if self.logger is not None:
                 self.logger.watch(self.patchore_model)
             print("Embedding Extraction:")
@@ -90,15 +90,11 @@ class TrainerPatchCore():
                 self.patchore_model.product_quantizer.fit(coreset)
                 coreset = self.patchore_model.product_quantizer.encode(coreset)
 
-
             self.patchore_model.memory_bank = coreset
 
             img_roc, pxl_roc, f1_img, f1_pxl, img_pr, pxl_pr, pxl_pro = self.evaluator.evaluate(self.patchore_model)
 
-            if self.logger is not None:
-                self.logger.log({
-                    "train_loss" : 0,
-                    "val_loss" : 0,
+            results = {
                     "img_roc": img_roc,
                     "pxl_roc": pxl_roc,
                     "f1_img": f1_img,
@@ -106,7 +102,23 @@ class TrainerPatchCore():
                     "img_pr": img_pr,
                     "pxl_pr": pxl_pr,
                     "pxl_pro": pxl_pro
-                })
+                }
+
+            # if self.logger is not None:
+            #     self.logger.log({
+            #         "train_loss" : 0,
+            #         "val_loss" : 0,
+            #         "img_roc": img_roc,
+            #         "pxl_roc": pxl_roc,
+            #         "f1_img": f1_img,
+            #         "f1_pxl": f1_pxl,
+            #         "img_pr": img_pr,
+            #         "pxl_pr": pxl_pr,
+            #         "pxl_pro": pxl_pro
+            #     })
+
+            if self.logger is not None:
+                self.logger.log(results)
 
             print("End training performances:")
             print(f"""
@@ -118,10 +130,6 @@ class TrainerPatchCore():
                 pxl_pr: {pxl_pr} \n
                 pxl_pro: {pxl_pro} \n
             """)
-
-
-
-
-
-
+            
+        return results
 

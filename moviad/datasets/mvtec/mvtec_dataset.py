@@ -122,7 +122,7 @@ class MVTecDataset(IadDataset):
         if norm:
             t_list = [lambda img: compressor.compress_image(img, compression_method=self.compression_method, quality = self.quality, apply = self.apply_compression),
                 transforms.ToTensor(),
-                transforms.Resize(img_size, antialias=True),
+                #transforms.Resize(img_size, antialias=True),
                 transforms.Normalize(
                     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
                 ),

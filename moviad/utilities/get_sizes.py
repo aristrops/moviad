@@ -17,6 +17,7 @@ def get_model_macs(model:torch.nn.Module, input_shape = (1,3,224,224)) -> int:
     flops, macs, params = calculate_flops(model=model, 
                                       input_shape=input_shape,
                                       output_as_string=False,
+                                      print_results=False,
                                       output_precision=4)
     
     return macs, params

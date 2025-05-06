@@ -18,8 +18,8 @@ class ProductQuantizer:
         if isinstance(input, torch.Tensor):
             input = input.cpu().numpy()
         self.dim = dim
-        self.subspaces = self.__compute_optimal_m(input)
-        self.centroid_bits = self.__compute_optimal_k(input)
+        self.subspaces = self.__compute_optimal_m(input) if self.subspaces is None else self.subspaces
+        self.centroid_bits = self.__compute_optimal_k(input) 
 
         self.quantizer = faiss.IndexPQ(input.shape[dim], self.subspaces, self.centroid_bits)
         self.quantizer.train(input)

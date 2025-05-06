@@ -57,7 +57,7 @@ class Evaluator:
                     "The output anomaly maps should have the same resolution as the target masks."
                     + f"Expected shape: {masks.shape[2:]}, got: {anomaly_maps.shape[2:]}"
                 )
-
+            
             # add true masks and img anomaly scores
             gt_masks_list.extend(masks.cpu().numpy().astype(int))
             true_img_scores.extend(labels.cpu().numpy())
@@ -69,7 +69,6 @@ class Evaluator:
             else:
                 pred_masks.extend(anomaly_maps)
                 pred_img_scores.extend(anomaly_scores)
-
 
         gt_masks_list = np.asarray(gt_masks_list)
         true_img_scores = np.asarray(true_img_scores)

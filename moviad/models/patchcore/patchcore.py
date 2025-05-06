@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 import os
+import time
 
 import cv2 as cv
 import matplotlib.pyplot as plt
@@ -124,7 +125,7 @@ class PatchCore(nn.Module):
         embedding = torch.cat(features, dim=1)
 
         batch_size, _, width, height = embedding.shape
-        embedding = self.reshape_embedding(embedding)
+        embedding = self.reshape_embedding(embedding).to(self.device)
 
         #embedding shape: (#num_patches, emb_dim)
 
