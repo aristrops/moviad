@@ -87,6 +87,8 @@ class TrainerPatchCore():
             if self.patchore_model.apply_quantization:
                 assert self.patchore_model.product_quantizer is not None, "Product Quantizer not initialized"
 
+                print("Quantizing memory bank...")
+
                 self.patchore_model.product_quantizer.fit(coreset)
                 coreset = self.patchore_model.product_quantizer.encode(coreset)
 
@@ -130,6 +132,11 @@ class TrainerPatchCore():
                 pxl_pr: {pxl_pr} \n
                 pxl_pro: {pxl_pro} \n
             """)
+        
+            # peak_memory_gpu = self.evaluator.measure_peak_inference_memory(self.patchore_model)
+            # #peak_memory_cpu = self.evaluator.measure_peak_inference_memory_cpu(self.patchore_model)
+            # print(f"Peak GPU Memory Usage during inference: {peak_memory_gpu:.2f} MB")
+            #print(f"Peak CPU Memory Usage during inference: {peak_memory_cpu:.2f} MB")
             
         return results
 

@@ -22,12 +22,13 @@ class VisaDataset(IadDataset):
 
     def __init__(self, root_path: str, csv_path: str, split: Split, class_name: str,
                  gt_mask_size: Optional[tuple] = None, image_size=(224,224), transform=None):
+
+        self.gt_mask_size = image_size if gt_mask_size is None else gt_mask_size
         self.root_path = root_path
         self.csv_path = csv_path
         self.split = split
         self.transform = transform
         self.class_name = class_name
-        self.gt_mask_size = gt_mask_size
         self.dataframe = pd.read_csv(csv_path)
         self.dataframe = self.dataframe[self.dataframe["split"] == split.value]
         self.dataframe = self.dataframe[self.dataframe["object"] == class_name]

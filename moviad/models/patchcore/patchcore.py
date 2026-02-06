@@ -246,45 +246,90 @@ class PatchCore(nn.Module):
         return patch_scores, locations
 
 
-    def nearest_neighbors_quantized(self, embedding: Tensor, n_neighbors: int) -> tuple[Tensor, Tensor]:
-        """
-        Nearest neighbors using brute force method and euclidean norm.
+    # def nearest_neighbors_quantized(self, embedding: Tensor, n_neighbors: int) -> tuple[Tensor, Tensor]:
+    #     """
+    #     Nearest neighbors using brute force method and euclidean norm.
 
-        Args:
-            embedding (Tensor): Features to compare the distance with the memory bank.
-            n_neighbors (int): Number of neighbors to look at
+    #     Args:
+    #         embedding (Tensor): Features to compare the distance with the memory bank.
+    #         n_neighbors (int): Number of neighbors to look at
 
-        Returns:
-            Tensor: Patch scores.
-            Tensor: Locations of the nearest neighbor(s).
-        """
-        self.memory_bank = self.memory_bank.to(self.device)
+    #     Returns:
+    #         Tensor: Patch scores.
+    #         Tensor: Locations of the nearest neighbor(s).
+    #     """
+    #     self.memory_bank = self.memory_bank.to(self.device)
 
-        # Top 100 nearest neighbors
-        quantized_embedding = self.product_quantizer.encode(embedding)
-        quantized_embedding = quantized_embedding.to(self.device)
-        distances = PatchCore.euclidean_distance(quantized_embedding, self.memory_bank,
-                                                 quantized=self.feature_extractor.quantized)
+    #     # Top 100 nearest neighbors
+    #     quantized_embedding = self.product_quantizer.encode(embedding)
+    #     quantized_embedding = quantized_embedding.to(self.device)
+    #     distances = PatchCore.euclidean_distance(quantized_embedding, self.memory_bank,
+    #                                              quantized=self.feature_extractor.quantized)
 
-        # Top 100 nearest neighbors
-        top_100_patch_scores, top_100_locations = distances.topk(k=100, largest=False, dim=1)
+    #     # Top 100 nearest neighbors
+    #     top_100_patch_scores, top_100_locations = distances.topk(k=1000, largest=False, dim=1)
 
-        # Decode the top 100 neighbors from the memory bank
-        top_100_neighbors = self.memory_bank[top_100_locations]
-        patch_scores = []
-        locations = []
-        for embedding_index in range(top_100_neighbors.size(0)):
-            neighbours = top_100_neighbors[embedding_index]
-            decoded_neighbors = self.product_quantizer.decode(neighbours)
-            embedding_value = embedding[embedding_index].unsqueeze(0)
-            decoded_neighbors = decoded_neighbors.to(self.device)
-            neighbour_distances = PatchCore.euclidean_distance(embedding_value, decoded_neighbors, quantized=False)
-            top_patch_score, top_location = neighbour_distances.topk(k=n_neighbors, largest=False, dim=1)
-            patch_scores.append(top_patch_score)
-            locations.append(top_location)
-        patch_scores = torch.cat(patch_scores, dim=0).squeeze()
-        locations = torch.cat(locations, dim=0).squeeze()
+    #     # Decode the top 100 neighbors from the memory bank
+    #     top_100_neighbors = self.memory_bank[top_100_locations]
+    #     patch_scores = []
+    #     locations = []
+    #     for embedding_index in range(top_100_neighbors.size(0)):
+    #         neighbours = top_100_neighbors[embedding_index]
+    #         decoded_neighbors = self.product_quantizer.decode(neighbours)
+    #         embedding_value = embedding[embedding_index].unsqueeze(0)
+    #         decoded_neighbors = decoded_neighbors.to(self.device)
+    #         neighbour_distances = PatchCore.euclidean_distance(embedding_value, decoded_neighbors, quantized=False)
+    #         top_patch_score, top_location = neighbour_distances.topk(k=n_neighbors, largest=False, dim=1)
+    #         patch_scores.append(top_patch_score)
+    #         locations.append(top_location)
+    #     patch_scores = torch.cat(patch_scores, dim=0).squeeze()
+    #     locations = torch.cat(locations, dim=0).squeeze()
+    #     return patch_scores, locations
+
+    #NEW NN quantized (vectorized)
+    def nearest_neighbors_quantized(
+        self, embedding: Tensor, n_neighbors: int) -> tuple[Tensor, Tensor]:
+        
+        device = self.device
+        embedding = embedding.to(device)
+        self.memory_bank = self.memory_bank.to(device)
+
+        quantized_embedding = self.product_quantizer.encode(embedding).to(device)
+
+        distances = PatchCore.euclidean_distance(
+            quantized_embedding,
+            self.memory_bank,
+            quantized=self.feature_extractor.quantized,
+        )
+
+        _, top_locations = distances.topk(
+            k=1000, largest=False, dim=1
+        )  
+
+        quantized_neighbors = self.memory_bank[top_locations]
+
+        B, K, Dq = quantized_neighbors.shape
+
+        decoded_neighbors = self.product_quantizer.decode(
+            quantized_neighbors.view(-1, Dq)
+        ).view(B, K, -1).to(device)
+
+        embedding_expanded = embedding.unsqueeze(1)
+
+        exact_distances = PatchCore.euclidean_distance(
+            embedding_expanded,
+            decoded_neighbors,
+            quantized=False,
+        )
+
+        exact_distances = exact_distances.squeeze(1)  # [B, top_k]
+
+        patch_scores, locations = exact_distances.topk(
+            k=n_neighbors, largest=False, dim=1
+        )
+
         return patch_scores, locations
+
 
 
     def compute_anomaly_score(self, patch_scores: Tensor, locations: Tensor, embedding: Tensor) -> Tensor:
@@ -306,7 +351,7 @@ class PatchCore(nn.Module):
             memory_bank = memory_bank.to(self.device)
 
         # Don't need to compute weights if num_neighbors is 1
-        if self.num_neighbors == 1:
+        if self.num_neighbors == 1 or self.apply_quantization: 
             return patch_scores.amax(1)
 
         batch_size, num_patches = patch_scores.shape
@@ -325,9 +370,14 @@ class PatchCore(nn.Module):
         # indices of N_b(m^*) in the paper
         memory_bank_effective_size = memory_bank.shape[0]  # edge case when memory bank is too small
         if self.apply_quantization:
-            _, support_samples = self.nearest_neighbors_quantized(
+        #     _, support_samples = self.nearest_neighbors_quantized(
+        #         nn_sample,
+        #         n_neighbors=min(self.num_neighbors, memory_bank_effective_size),
+        #     )
+            _, support_samples = self.nearest_neighbors(
                 nn_sample,
                 n_neighbors=min(self.num_neighbors, memory_bank_effective_size),
+                memory_bank=memory_bank
             )
         else:
             _, support_samples = self.nearest_neighbors(
@@ -343,6 +393,7 @@ class PatchCore(nn.Module):
 
         # 6. Apply the weight factor to the score
         return weights * score  # s in the paper
+
 
     def save_model(self, output_path):
         """
@@ -426,11 +477,20 @@ class PatchCore(nn.Module):
         }
 
         # get MB size and shape
-        sizes["memory_bank"] = {
-            "size" : get_tensor_size(self.memory_bank),
+        if self.apply_quantization:
+            sizes["memory_bank_codes"] = get_tensor_size(self.memory_bank)
+            sizes["pq_codebooks"] = self.product_quantizer.get_size_mb()
+            sizes["memory_bank"] = {
+            "size" : sizes["memory_bank_codes"] + sizes["pq_codebooks"],
             "type" : str(self.memory_bank.dtype),
             "shape" : self.memory_bank.shape
         }
+        else:
+            sizes["memory_bank"] = {
+                "size" : get_tensor_size(self.memory_bank),
+                "type" : str(self.memory_bank.dtype),
+                "shape" : self.memory_bank.shape
+            }
 
         total_size = sizes["feature_extractor"]["size"] + sizes["memory_bank"]["size"]
 

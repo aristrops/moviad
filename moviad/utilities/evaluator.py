@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import psutil
 from typing import Union, Optional, Tuple
 
 import pandas as pd
@@ -230,6 +231,62 @@ class Evaluator:
         threshold = thresholds[np.argmax(f1)]
 
         return threshold
+
+    def measure_peak_inference_memory(self, model):
+        model.eval()
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats(self.device)
+
+        with torch.no_grad():
+            for batch in self.test_dataloader:
+                if isinstance(batch, (list, tuple)):
+                    inputs = batch[0]
+                else:
+                    inputs = batch
+                inputs = inputs.to(self.device)
+
+                _ = model(inputs)
+                break  
+
+        peak_mem_mb = torch.cuda.max_memory_allocated(self.device) / (1024 ** 2)
+        return peak_mem_mb
+    
+    
+    def measure_peak_inference_memory_cpu(self, model):
+        """
+        Measure peak CPU memory usage (in MB) during a single forward pass.
+
+        Args:
+            model: the PatchCore or any PyTorch model
+
+        Returns:
+            peak_cpu_mem_mb: Peak CPU memory in MB
+        """
+        model.eval()
+        process = psutil.Process(os.getpid())
+        
+        # Record initial memory
+        mem_before = process.memory_info().rss / (1024 ** 2)  # in MB
+        peak_mem = mem_before
+
+        with torch.no_grad():
+            for batch in self.test_dataloader:
+                if isinstance(batch, (list, tuple)):
+                    inputs = batch[0]
+                else:
+                    inputs = batch
+                # Move to CPU explicitly
+                inputs = inputs.cpu()
+
+                _ = model(inputs)  # forward pass
+
+                mem_now = process.memory_info().rss / (1024 ** 2)
+                peak_mem = max(peak_mem, mem_now)
+                
+                break  # measure only single batch
+
+        peak_cpu_mem_mb = peak_mem - mem_before
+        return peak_cpu_mem_mb
     
 def append_results(
     output_path: Union[str, os.PathLike],
@@ -278,3 +335,5 @@ def append_results(
         old_df = pd.read_csv(output_path)
         df = pd.concat([old_df, df], ignore_index=True)
     df.to_csv(output_path, index=False)
+
+

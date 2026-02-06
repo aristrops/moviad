@@ -180,6 +180,7 @@ class MVTecDataset(IadDataset):
             (str(root),) + f.parts[-3:]
             for f in root.glob(r"**/*")
             if f.suffix in IMG_EXTENSIONS
+            and f.parts[-2] != "example"
         ]
 
         if not samples_list:
@@ -225,6 +226,7 @@ class MVTecDataset(IadDataset):
 
             # assert that the right mask files are associated with the right test images
             abnormal_samples = samples.loc[samples.label_index == LabelName.ABNORMAL]
+
             if (
                     len(abnormal_samples)
                     and not abnormal_samples.apply(
