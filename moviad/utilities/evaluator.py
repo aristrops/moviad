@@ -34,7 +34,7 @@ class Evaluator:
         self.test_dataloader = test_dataloader
         self.device = device
 
-    def evaluate(self, model,  logger = None, output_path = False):
+    def evaluate(self, model):
         """
         Args:
             model: a model object on which you can call model.predict(batched_images)
@@ -56,7 +56,7 @@ class Evaluator:
             if anomaly_maps.shape[2:] != masks.shape[2:]:
                 raise Exception(
                     "The output anomaly maps should have the same resolution as the target masks."
-                    + f"Expected shape: {masks.shape[2:]}, got: {anomaly_maps.shape[2:]}"
+                    + f"Expected shape: {masks.shape}, got: {anomaly_maps.shape}"
                 )
             
             # add true masks and img anomaly scores
@@ -82,45 +82,36 @@ class Evaluator:
         fpr, tpr, img_roc_auc = cal_img_roc(pred_img_scores, true_img_scores)
 
         """Pixel-level AUROC"""
-        fpr, tpr, per_pixel_rocauc = cal_pxl_roc(gt_masks_list, pred_masks)
+        fpr, tpr, pxl_roc_auc = cal_pxl_roc(gt_masks_list, pred_masks)
 
         """F1 Score Image-level"""
-        f1_img = cal_f1_img(pred_img_scores, true_img_scores)
+        img_f1 = cal_f1_img(pred_img_scores, true_img_scores)
 
         """F1 Score Pixel-level"""
-        f1_pxl = cal_f1_pxl(pred_masks, gt_masks_list)
+        pxl_f1 = cal_f1_pxl(pred_masks, gt_masks_list)
 
         """Image-level PR-AUC"""
-        pr_auc_img = cal_pr_auc_img(pred_img_scores, true_img_scores)
+        img_pr_auc = cal_pr_auc_img(pred_img_scores, true_img_scores)
 
         """Pixel-level PR-AUC"""
-        pr_auc_pxl = cal_pr_auc_pxl(pred_masks, gt_masks_list)
+        pxl_pr_auc = cal_pr_auc_pxl(pred_masks, gt_masks_list)
 
         """Pixel-level AU-PRO"""
-        au_pro_pxl = cal_pro_auc_pxl(np.squeeze(pred_masks, axis=1), gt_masks_list)
+        pxl_au_pro = cal_pro_auc_pxl(np.squeeze(pred_masks, axis=1), gt_masks_list)
 
         # TODO: Implement Add False-alarm rate
 
-        if logger is not None:
-            logger.log({
-                "img_roc_auc": img_roc_auc,
-                "per_pixel_rocauc": per_pixel_rocauc,
-                "f1_img": f1_img,
-                "f1_pxl": f1_pxl,
-                "pr_auc_img": pr_auc_img,
-                "pr_auc_pxl": pr_auc_pxl,
-                "au_pro_pxl": au_pro_pxl
-            })
+        metrics = {
+            "img_roc_auc": img_roc_auc,
+            "pxl_roc_auc": pxl_roc_auc,
+            "img_f1": img_f1,
+            "pxl_f1": pxl_f1,
+            "img_pr_auc": img_pr_auc,
+            "pxl_pr_auc": pxl_pr_auc,
+            "pxl_au_pro": pxl_au_pro
+        }
 
-        return (
-            img_roc_auc,
-            per_pixel_rocauc,
-            f1_img,
-            f1_pxl,
-            pr_auc_img,
-            pr_auc_pxl,
-            au_pro_pxl,
-        )
+        return metrics
 
            
     def evaluate_single_images(self, model):

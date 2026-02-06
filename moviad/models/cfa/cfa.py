@@ -23,16 +23,16 @@ from moviad.utilities.get_sizes import *
 class CFA(nn.Module):
 
     def __init__(
-            self, 
-            feature_extractor: CustomFeatureExtractor, 
+            self,
+            feature_extractor: CustomFeatureExtractor,
             backbone: str,
             device: torch.device,
-            gamma_c:int = 1, 
-            gamma_d:int = 1, 
+            gamma_c:int = 1,
+            gamma_d:int = 1,
         ):
 
         """
-        Args:  
+        Args:
             feature_extractor () : feature extractor to be used
             training_dataloader (torch.utils.data.DataLoader) : training dataloader
             backbone (str) : name of the used backbone in the feature extractor
@@ -43,7 +43,7 @@ class CFA(nn.Module):
 
         super(CFA, self).__init__()
         self.device = device
-        
+
         self.C   = 0
         self.nu = 1e-3
         self.scale = None
@@ -54,11 +54,11 @@ class CFA(nn.Module):
         self.K = 3
         self.J = 3
         self.r   = nn.Parameter(1e-5*torch.ones(1), requires_grad=True)
-    
-        self.feature_extractor = feature_extractor 
+
+        self.feature_extractor = feature_extractor
         self.Descriptor = None
         self.backbone = backbone
-        
+
         self.feature_maps_shape: tuple = None # only for model footprint
 
     def initialize_memory_bank(self, training_dataloader: DataLoader):
@@ -71,7 +71,7 @@ class CFA(nn.Module):
 
         self.init_centroid(self.feature_extractor, training_dataloader)
         self.C = rearrange(self.C, 'b c h w -> (b h w) c').detach()
-        
+
         if self.gamma_c > 1:
             self.C = self.C.cpu().detach().numpy()
             self.C = KMeans(n_clusters=(self.scale**2)//self.gamma_c, max_iter=3000).fit(self.C).cluster_centers_
@@ -87,7 +87,7 @@ class CFA(nn.Module):
         Args:
             x (torch.Tensor) : batch of images
 
-        Returns: 
+        Returns:
             loss (float) if the model is in training mode
             else a tuple:
                 [0] : tensor with the anomaly maps (one for every input image)
@@ -98,13 +98,13 @@ class CFA(nn.Module):
         if isinstance(p, dict):
             p = list(p.values())
 
-        if not self.feature_maps_shape: 
+        if not self.feature_maps_shape:
             self.feature_maps_shape = (1, int(self.feature_maps_channels.item()), p[0].shape[2], p[0].shape[3])
-        
-        phi_p = self.Descriptor(p)       
+
+        phi_p = self.Descriptor(p)
         phi_p = rearrange(phi_p, 'b c h w -> b (h w) c')
-        
-        features = torch.sum(torch.pow(phi_p, 2), 2, keepdim=True)    
+
+        features = torch.sum(torch.pow(phi_p, 2), 2, keepdim=True)
         centers  = torch.sum(torch.pow(self.C, 2), 0, keepdim=True)
         f_c      = 2 * torch.matmul(phi_p, (self.C))
         dist     = features + centers - f_c
@@ -115,11 +115,11 @@ class CFA(nn.Module):
 
         dist = (F.softmin(dist, dim=-1)[:, :, 0]) * dist[:, :, 0]
         dist = dist.unsqueeze(-1)
-        
+
         if self.training:
             return self.soft_boundary(phi_p)
-        else: 
-            self.scale = p[0].size(2) 
+        else:
+            self.scale = p[0].size(2)
             scores = rearrange(dist, 'b (h w) c -> b c h w', h=self.scale).cpu().detach()
 
             heatmaps = torch.mean(scores, dim=1)
@@ -129,7 +129,7 @@ class CFA(nn.Module):
             img_scores = scores.reshape(scores.shape[0], -1).max(axis=1).values
 
             if len(heatmaps.shape) == 2:
-                return heatmaps.view(1,1,heatmaps.shape[0], heatmaps.shape[1]), img_scores    
+                return heatmaps.view(1,1,heatmaps.shape[0], heatmaps.shape[1]), img_scores
             else:
                 return heatmaps.unsqueeze(dim=1), img_scores
 
@@ -140,7 +140,7 @@ class CFA(nn.Module):
         Args:
             phi_p (torch.Tensor) : batch of transformed features
 
-        Returns: 
+        Returns:
             loss (float) : CFA loss
         """
 
@@ -152,21 +152,21 @@ class CFA(nn.Module):
         n_neighbors = self.K + self.J
         dist     = dist.topk(n_neighbors, largest=False).values
 
-        score = (dist[:, : , :self.K] - self.r**2) 
+        score = (dist[:, : , :self.K] - self.r**2)
         L_att = (1/self.nu) * torch.mean(torch.max(torch.zeros_like(score), score))
-        
-        score = (self.r**2 - dist[:, : , self.J:]) 
+
+        score = (self.r**2 - dist[:, : , self.J:])
         L_rep  = (1/self.nu) * torch.mean(torch.max(torch.zeros_like(score), score - self.alpha))
-        
+
         loss = L_att + L_rep
 
-        return loss 
+        return loss
 
     def init_centroid(self, feature_extractor:CustomFeatureExtractor, data_loader:DataLoader):
         """
         This method initializes the memory bank points
 
-        Args:  
+        Args:
             feature_extractor (CustomFeatureExtractor) : feature extractor to be used
             training_dataloader (torch.utils.data.DataLoader) : training dataloader
         """
@@ -178,21 +178,21 @@ class CFA(nn.Module):
             if isinstance(p, dict):
                 p = list(p.values())
 
-            if not self.Descriptor: 
-                self.feature_maps_channels = nn.Parameter(sum(tensor.size(1) for tensor in p) * torch.ones(1), requires_grad = False)     
-                self.Descriptor = Descriptor(self.gamma_d, int(self.feature_maps_channels.item()), self.backbone).to(self.device)
+            if not self.Descriptor:
+                self.feature_maps_channels = nn.Parameter(sum(tensor.size(1) for tensor in p) * torch.ones(1), requires_grad = False)
+                self.Descriptor = Descriptor(self.gamma_d, int(self.feature_maps_channels.item()), self.backbone, self.device).to(self.device)
 
             self.scale = p[0].size(2)
             phi_p = self.Descriptor(p)
             self.C = ((self.C * i) + torch.mean(phi_p, dim=0, keepdim=True).detach()) / (i+1)
 
-    def get_model_size_and_macs(self) -> tuple[dict, float]: 
-        
+    def get_model_size_and_macs(self) -> tuple[dict, float]:
+
         """
         This method returns the model size and inference MACs
 
-        Returns: 
-            tuple: 
+        Returns:
+            tuple:
                 [0] : dict with all model components sizes, macs and number of parameters
                 [1] : total size of the AD model
         """
@@ -204,14 +204,14 @@ class CFA(nn.Module):
         macs, params = get_model_macs(self.feature_extractor.model)
         sizes["feature_extractor"] = {
             "size" : get_torch_model_size(self.feature_extractor.model),
-            "params" : params, 
+            "params" : params,
             "macs" : macs
         }
 
         macs, params = get_model_macs(self.Descriptor, self.feature_maps_shape)
         sizes["patch_descriptor"] = {
             "size" : get_torch_model_size(self.Descriptor),
-            "params" : params, 
+            "params" : params,
             "macs" : macs
         }
 
@@ -221,8 +221,8 @@ class CFA(nn.Module):
             "type" : str(self.C.dtype),
             "shape" : self.C.shape
         }
-        
-        total_size = sizes["feature_extractor"]["size"] + sizes["patch_descriptor"]["size"] + sizes["memory_bank"]["size"] 
+
+        total_size = sizes["feature_extractor"]["size"] + sizes["patch_descriptor"]["size"] + sizes["memory_bank"]["size"]
 
         return sizes, total_size
 
@@ -245,7 +245,7 @@ class CFA(nn.Module):
         self.C = state_dict["C"]
 
         # load the Patch Descriptor
-        self.Descriptor = Descriptor(self.gamma_d, int(state_dict["feature_maps_channels"]), self.backbone)
+        self.Descriptor = Descriptor(self.gamma_d, int(state_dict["feature_maps_channels"]), self.backbone, self.device)
         desc_dict = {
             'layer.weight'  : state_dict['Descriptor.layer.weight'],
             'layer.bias' : state_dict['Descriptor.layer.bias'],
@@ -275,7 +275,7 @@ class CFA(nn.Module):
         # Load the image file and resize.
         original_image = cv.imread(filepath)
         original_image = cv.resize(original_image, anomaly_map.shape[:2])
-    
+
         # Normalize anomaly map for easier visualization.
         anomaly_map_norm = cvt2heatmap(255 * CFA.rescale(anomaly_map))
 
@@ -303,13 +303,13 @@ class CFA(nn.Module):
         axes[2].imshow(output_image)
         axes[2].set_title(f'Heatmap {pred_score}')
         axes[2].axis('off')
-        
+
         # Show the plot
         plt.savefig(str(dirpath / f"{x_type}_{filename}.jpg"))
 
 
     # --------------- SEGMENTATION MASK PRODUCTION ---------------- #
-        
+
     @staticmethod
     def upsample(x, size, mode):
         return (
@@ -358,4 +358,3 @@ class CFA(nn.Module):
         threshold = thresholds[np.argmax(f1)]
 
         return threshold
-

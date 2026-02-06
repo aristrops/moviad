@@ -35,7 +35,6 @@ CONFIG_PATH = '../config.json'
 class PatchCoreTrainTests(unittest.TestCase):
 
     def setUp(self):
-
         self.args = PatchCoreArgs()
         self.config = DatasetConfig(CONFIG_PATH)
         dataset_factory = DatasetFactory(self.config)

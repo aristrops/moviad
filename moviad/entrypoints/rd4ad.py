@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from moviad.common.args import Args
 from moviad.datasets.iad_dataset import IadDataset
 from moviad.entrypoints.common import load_datasets
-from moviad.models.rd4ad import RD4AD
-from moviad.trainers.trainer_rd4ad import RD4AD_Trainer
+from moviad.models.rd4ad.rd4ad import RD4AD
+from moviad.trainers.trainer_rd4ad import TrainerRD4AD
 
 
 @dataclass
@@ -17,7 +17,9 @@ class RD4ADArgs(Args):
     ad_layers: list = None
     img_input_size: tuple = (224, 224)
     batch_size: int = 2
+    epochs: int = 10
     device: torch.device = None
+    save_path: str = None
 
 
 def train_rd4ad(args: RD4ADArgs, logger=None) -> None:
@@ -34,15 +36,15 @@ def train_rd4ad(args: RD4ADArgs, logger=None) -> None:
     # define the model
     model = RD4AD(args.device,args.img_input_size)
     model.to(args.device)
-    trainer = RD4AD_Trainer(model, train_dataloader, test_dataloader, args.device, logger=logger)
-    trainer.train()
+    trainer = TrainerRD4AD(model, train_dataloader, test_dataloader, args.device, logger=logger)
+    trainer.train(args.epochs)
 
     # save the model
-    if args.save_path:
+    if args.save_path and args.save_path != "":
         torch.save(model.state_dict(), args.save_path)
 
     # force garbage collector in case
-    del patchcore
+    del model
     del train_dataloader
     del test_dataloader
     torch.cuda.empty_cache()

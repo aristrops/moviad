@@ -10,6 +10,13 @@ from moviad.models.components.rd4ad.deresnet import de_resnet18
 
 class RD4AD(torch.nn.Module):
 
+    DEFAULT_PARAMETERS = {
+        "epochs": 200, 
+        "batch_size": 16,
+        "learning_rate": 0.005,
+        "betas": (0.5,0.999),
+    }
+
     def __init__(self, backbone_name, device, input_size = (224, 224)):
         super().__init__()
 

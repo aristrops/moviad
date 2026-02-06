@@ -1,35 +1,35 @@
 """
-This class represent a feature extractor built on top of a custom backbone. The backbone name is passed as input to the constructor. 
-Based on the model name and the layers indexes it will consider the correct layers for the feature extraction. 
+This class represent a feature extractor built on top of a custom backbone. The backbone name is passed as input to the constructor.
+Based on the model name and the layers indexes it will consider the correct layers for the feature extraction.
 """
 
 from __future__ import annotations
 import torch
 import torchvision
 from torchvision.models.feature_extraction import create_feature_extractor
-from backbones.mcunet.mcunet.model_zoo import net_id_list, build_model 
-from backbones.micronet.micronet import micronetBB
+from moviad.backbones.mcunet.mcunet.model_zoo import net_id_list, build_model
+from moviad.backbones.micronet.micronet import micronetBB
 #from micromind import PhiNet
 
 OTHERS_BACKBONES = (
-    "mcunet-in3", 
-    "micronet-m0", 
-    "micronet-m1", 
-    "micronet-m2", 
-    "micronet-m3", 
-    "phinet_2.3_0.75_5", 
-    "phinet_1.2_0.5_6_downsampling", 
-    "phinet_0.8_0.75_8_downsampling", 
-    "phinet_1.3_0.5_7_downsampling", 
-    "phinet_0.9_0.5_4_downsampling_deep", 
+    "mcunet-in3",
+    "micronet-m0",
+    "micronet-m1",
+    "micronet-m2",
+    "micronet-m3",
+    "phinet_2.3_0.75_5",
+    "phinet_1.2_0.5_6_downsampling",
+    "phinet_0.8_0.75_8_downsampling",
+    "phinet_1.3_0.5_7_downsampling",
+    "phinet_0.9_0.5_4_downsampling_deep",
     "phinet_0.9_0.5_4_downsampling"
 )
 
 TORCH_BACKBONES = (
-    "vgg19_bn", 
-    "resnet18", 
-    "wide_resnet50_2", 
-    "efficientnet_b5", 
+    "vgg19_bn",
+    "resnet18",
+    "wide_resnet50_2",
+    "efficientnet_b5",
     "mobilenet_v2"
 )
 
@@ -46,17 +46,17 @@ class CustomFeatureExtractor:
         """
 
         self.model_name = model_name
-        self.layers_idx = layers_idx 
+        self.layers_idx = layers_idx
         self.device = device
-        
+
         #¢heck for backbone support
-        if model_name not in OTHERS_BACKBONES + TORCH_BACKBONES: 
+        if model_name not in OTHERS_BACKBONES + TORCH_BACKBONES:
             raise Exception(f"The backbone: {model_name} is not supported for feature extraction")
 
         #check for mcunet backbone
         if "mcunet" in model_name:
-            if model_name in net_id_list: 
-                self.model, _, _ = build_model(net_id=model_name, pretrained=True)  
+            if model_name in net_id_list:
+                self.model, _, _ = build_model(net_id=model_name, pretrained=True)
 
             #attach the hook
             #self.attach_hook()
@@ -69,17 +69,17 @@ class CustomFeatureExtractor:
             self.attach_hook()
 
         # check for phinet backbone
-        if "phinet" in model_name: 
+        if "phinet" in model_name:
 
             self.load_phinet()
 
             #attach the hook
             self.attach_hook()
 
-        if model_name in TORCH_BACKBONES: 
+        if model_name in TORCH_BACKBONES:
             self.model = CustomFeatureExtractor.get_feature_extractor(model_name, layers_idx)
 
-        
+
         #load the model to the device
         self.model = self.model.to(self.device)
 
@@ -97,7 +97,7 @@ class CustomFeatureExtractor:
         if "mcunet" in self.model_name:
             # self.model = Sequential....
             pass
-        
+
 
     def load_phinet(self):
 
@@ -143,12 +143,12 @@ class CustomFeatureExtractor:
         feature_extractor = create_feature_extractor(model=model, return_nodes=return_nodes)
 
         return feature_extractor
-    
+
     def attach_hook(self, bootstrap_idx = 0):
 
         def hook(module, input, output):
             self.features.append(output)
-        
+
         feature_layers = None
 
         if "mcunet" in self.model_name:
@@ -163,14 +163,17 @@ class CustomFeatureExtractor:
         for idx in self.layers_idx:
             assert idx - bootstrap_idx > 0, "Invalid layer index"
             feature_layers[idx - bootstrap_idx].register_forward_hook(hook)
-     
-    def __call__(self, batch: torch.Tensor) -> list[torch.Tensor]: 
+
+    def __call__(self, batch: torch.Tensor) -> list[torch.Tensor]:
 
         if self.model_name in TORCH_BACKBONES:
             return list(self.model(batch).values())
-        
+
         else:
             self.features = []
             self.model(batch.to(self.device))
             return self.features
 
+    def get_channels_dim(self):
+        features = self(torch.rand(1,3,224,224).to(self.device))
+        return sum(feature.shape[1] for feature in features)

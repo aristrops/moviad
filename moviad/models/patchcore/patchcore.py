@@ -408,7 +408,7 @@ class PatchCore(nn.Module):
         if self.apply_quantization:
             assert self.product_quantizer is not None
             self.product_quantizer.save(output_path + "/product_quantizer.bin")
-        torch.save(model_state_dict, output_path + "/patchcore_model.pt")
+        torch.save(model_state_dict, output_path)
 
     def save_anomaly_map(self, dirpath, anomaly_map, pred_score, filepath, x_type, mask):
         """

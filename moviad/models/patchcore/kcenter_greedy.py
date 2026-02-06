@@ -86,11 +86,9 @@ class CoresetExtractor:
             k: int = 30000,
             eps: float = 0.90,
             float16: bool = True,
-            force_cpu: bool = False,
-
     ):
         """Returns n coreset idx for given z_lib.
-        
+
         Performance on AMD3700, 32GB RAM, RTX3080 (10GB):
         CPU: 40-60 it/s, GPU: 500+ it/s (float32), 1500+ it/s (float16)
 
@@ -131,10 +129,10 @@ class CoresetExtractor:
             last_item = last_item.half()
             z_lib = z_lib.half()
             min_distances = min_distances.half()
-        if torch.cuda.is_available() and not force_cpu:
-            last_item = last_item.to("cuda")
-            z_lib = z_lib.to("cuda")
-            min_distances = min_distances.to("cuda")
+
+        last_item = last_item.to(self.device)
+        z_lib = z_lib.to(self.device)
+        min_distances = min_distances.to(self.device)
 
         for _ in tqdm(range(self.k)):
             distances = torch.linalg.norm(z_lib - last_item, dim=1, keepdims=True)  # broadcasting step

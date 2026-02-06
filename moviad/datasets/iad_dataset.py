@@ -12,6 +12,10 @@ class IadDataset(Dataset):
     contamination_ratio: float
 
     @abstractmethod
+    def is_loaded(self) -> bool:
+        pass
+
+    @abstractmethod
     def __len__(self):
         pass
 
@@ -34,3 +38,9 @@ class IadDataset(Dataset):
     @abstractmethod
     def contains(self, entry) -> bool:
         pass
+
+    @staticmethod
+    def get_argpars_parameters(parser):
+        parser.add_argument("--normalize_dataset", action="store_true", help="If the dataset needs to be normalized to ImageNet mean and std")
+        parser.add_argument("--batch_size", type=int, help="Batch size for the dataloader")
+        return parser

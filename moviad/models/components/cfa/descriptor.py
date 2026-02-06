@@ -11,11 +11,11 @@ from moviad.models.components.cfa.coordconv import CoordConv2d
 SUPPORTED_BACKBONES = ("vgg19_bn", "resnet18", "wide_resnet50_2", "efficientnet_b5")
 
 class Descriptor(torch.nn.Module):
-    def __init__(self, gamma_d, feature_map_channels, cnn):
+    def __init__(self, gamma_d, feature_map_channels, cnn, device):
         super(Descriptor, self).__init__()
         self.cnn = cnn
         dim = feature_map_channels 
-        self.layer = CoordConv2d(dim, dim//gamma_d, 1) 
+        self.layer = CoordConv2d(dim, dim//gamma_d, 1, device = device) 
         
 
     def forward(self, p):
