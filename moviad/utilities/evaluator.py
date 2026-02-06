@@ -101,17 +101,17 @@ class Evaluator:
 
         # TODO: Implement Add False-alarm rate
 
-        metrics = {
-            "img_roc_auc": img_roc_auc,
-            "pxl_roc_auc": pxl_roc_auc,
-            "img_f1": img_f1,
-            "pxl_f1": pxl_f1,
-            "img_pr_auc": img_pr_auc,
-            "pxl_pr_auc": pxl_pr_auc,
-            "pxl_au_pro": pxl_au_pro
-        }
+        # metrics = {
+        #     "img_roc_auc": img_roc_auc,
+        #     "pxl_roc_auc": pxl_roc_auc,
+        #     "img_f1": img_f1,
+        #     "pxl_f1": pxl_f1,
+        #     "img_pr_auc": img_pr_auc,
+        #     "pxl_pr_auc": pxl_pr_auc,
+        #     "pxl_au_pro": pxl_au_pro
+        # }
 
-        return metrics
+        return img_roc_auc, pxl_roc_auc, img_f1, pxl_f1, img_pr_auc, pxl_pr_auc, pxl_au_pro
 
            
     def evaluate_single_images(self, model):

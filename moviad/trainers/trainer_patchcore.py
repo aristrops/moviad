@@ -32,6 +32,7 @@ class TrainerPatchCore(Trainer):
         coreset_extractor: CoresetExtractor = None,
         save_path=None,
         logger=None,
+        evaluate=True
     ):
         super().__init__(
             patchore_model, 
@@ -42,6 +43,12 @@ class TrainerPatchCore(Trainer):
             save_path,
         )
         self.coreset_extractor = coreset_extractor
+        self.patchore_model = patchore_model
+        self.train_dataloader = train_dataloader
+        self.test_dataloader = test_dataloder
+        self.device = device
+        self.evaluator = Evaluator(self.test_dataloader, self.device)
+        self.evaluate = evaluate
 
     def train(self):
 
@@ -100,53 +107,51 @@ class TrainerPatchCore(Trainer):
             if self.save_path:
                 self.model.save_model(save_path=self.save_path)
 
-            gpu_device = torch.device("cuda:0")
-            self.model.to(gpu_device)   
-            self.evaluator.device = gpu_device
+            self.model.to(self.device)   
+            self.evaluator.device = self.device
 
-            metrics = self.evaluator.evaluate(self.model)
+            if self.evaluate:
+                img_roc, pxl_roc, f1_img, f1_pxl, img_pr, pxl_pr, pxl_pro = self.evaluator.evaluate(self.model)
 
-            results = {
-                    "img_roc": img_roc,
-                    "pxl_roc": pxl_roc,
-                    "f1_img": f1_img,
-                    "f1_pxl": f1_pxl,
-                    "img_pr": img_pr,
-                    "pxl_pr": pxl_pr,
-                    "pxl_pro": pxl_pro
-                }
+                results = {
+                        "img_roc": img_roc,
+                        "pxl_roc": pxl_roc,
+                        "f1_img": f1_img,
+                        "f1_pxl": f1_pxl,
+                        "img_pr": img_pr,
+                        "pxl_pr": pxl_pr,
+                        "pxl_pro": pxl_pro
+                    }
 
-            # if self.logger is not None:
-            #     self.logger.log({
-            #         "train_loss" : 0,
-            #         "val_loss" : 0,
-            #         "img_roc": img_roc,
-            #         "pxl_roc": pxl_roc,
-            #         "f1_img": f1_img,
-            #         "f1_pxl": f1_pxl,
-            #         "img_pr": img_pr,
-            #         "pxl_pr": pxl_pr,
-            #         "pxl_pro": pxl_pro
-            #     })
+                # if self.logger is not None:
+                #     self.logger.log({
+                #         "train_loss" : 0,
+                #         "val_loss" : 0,
+                #         "img_roc": img_roc,
+                #         "pxl_roc": pxl_roc,
+                #         "f1_img": f1_img,
+                #         "f1_pxl": f1_pxl,
+                #         "img_pr": img_pr,
+                #         "pxl_pr": pxl_pr,
+                #         "pxl_pro": pxl_pro
+                #     })
 
-            if self.logger is not None:
-                self.logger.log(results)
+                # if self.logger is not None:
+                #     self.logger.log(results)
 
-            print("End training performances:")
-            print(f"""
-                img_roc: {img_roc} \n
-                pxl_roc: {pxl_roc} \n
-                f1_img: {f1_img} \n
-                f1_pxl: {f1_pxl} \n
-                img_pr: {img_pr} \n
-                pxl_pr: {pxl_pr} \n
-                pxl_pro: {pxl_pro} \n
-            """)
+                print("End training performances:")
+                print(f"""
+                    img_roc: {img_roc} \n
+                    pxl_roc: {pxl_roc} \n
+                    f1_img: {f1_img} \n
+                    f1_pxl: {f1_pxl} \n
+                    img_pr: {img_pr} \n
+                    pxl_pr: {pxl_pr} \n
+                    pxl_pro: {pxl_pro} \n
+                """)
+                #print(metrics)
+                
+                return results
         
-            # peak_memory_gpu = self.evaluator.measure_peak_inference_memory(self.patchore_model)
-            # #peak_memory_cpu = self.evaluator.measure_peak_inference_memory_cpu(self.patchore_model)
-            # print(f"Peak GPU Memory Usage during inference: {peak_memory_gpu:.2f} MB")
-            #print(f"Peak CPU Memory Usage during inference: {peak_memory_cpu:.2f} MB")
-            
-        return results
+
 

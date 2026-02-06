@@ -119,7 +119,7 @@ class MVTecDataset(IadDataset):
         self.quality = quality
         self.compression_method = compression_method
 
-        if norm:
+        if norm and self.apply_compression:
             t_list = [lambda img: compressor.compress_image(img, compression_method=self.compression_method, quality = self.quality, apply = self.apply_compression),
                 transforms.ToTensor(),
                 #transforms.Resize(img_size, antialias=True),
@@ -127,10 +127,23 @@ class MVTecDataset(IadDataset):
                     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
                 ),
             ]
-        else:
+        elif self.apply_compression and not norm:
             t_list = [lambda img: compressor.compress_image(img, compression_method = self.compression_method, quality = self.quality, apply = self.apply_compression),
                 transforms.ToTensor(),
                 transforms.Resize(img_size, antialias=True),
+            ]
+        elif not self.apply_compression and norm:
+            t_list = [
+                transforms.Resize(img_size, antialias=True),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
+        else:
+            t_list = [
+                transforms.Resize(img_size, antialias=True),
+                transforms.ToTensor(),
             ]
 
         self.transform_image = transforms.Compose(t_list)

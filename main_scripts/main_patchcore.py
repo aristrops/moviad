@@ -127,7 +127,7 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
 
         # save the model
         if save_path:
-            torch.save(patchcore.state_dict(), save_path)
+            patchcore.save_model(save_path)
 
         sizes, total_size = patchcore.get_model_size_and_macs()
         print(f"Size of the memory bank: {sizes['memory_bank']['size']: .2f} MB")

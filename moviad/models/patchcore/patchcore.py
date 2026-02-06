@@ -63,7 +63,7 @@ class PatchCore(nn.Module):
         self.compression_method = compression_method
 
 
-    def load(self, model_state_dict_patch, quantizer_state_dict_path):
+    def load(self, model_state_dict_path, quantizer_state_dict_path = None):
         """
         Load the Patchcore model
 
@@ -73,7 +73,7 @@ class PatchCore(nn.Module):
             quantizer_state_dict_patch (dict): quantizer state dictionary
         """
 
-        self.load_model(model_state_dict_patch)
+        self.load_model(model_state_dict_path)
         if quantizer_state_dict_path is not None:
             self.product_quantizer = ProductQuantizer()
             self.product_quantizer.load(quantizer_state_dict_path)
@@ -403,12 +403,15 @@ class PatchCore(nn.Module):
         ----------
             output_path (str): where the model will be saved
         """
-
+        os.makedirs(output_path, exist_ok=True)
+        
         model_state_dict = self.state_dict()
+        torch.save(model_state_dict, output_path + "patchcore_pill_quantized_s1.pt")
+        print("Model saved to " + output_path + "patchcore_pill_quantized_s1.pt")
         if self.apply_quantization:
             assert self.product_quantizer is not None
-            self.product_quantizer.save(output_path + "/product_quantizer.bin")
-        torch.save(model_state_dict, output_path)
+            self.product_quantizer.save(output_path + "patchcore_pill_quantized_s1_pq.bin")
+            print("Product Quantizer saved to " + output_path + "patchcore_pill_quantized_s1_pq.bin")
 
     def save_anomaly_map(self, dirpath, anomaly_map, pred_score, filepath, x_type, mask):
         """
