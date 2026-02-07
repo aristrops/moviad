@@ -19,6 +19,8 @@ def get_model_macs(model:torch.nn.Module, input_shape = (1,3,224,224)) -> int:
                                       output_as_string=False,
                                       print_results=False,
                                       output_precision=4)
+
+    params = sum(p.numel() for p in model.parameters())
     
     return macs, params
 

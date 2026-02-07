@@ -8,9 +8,12 @@ from torch.utils.data import DataLoader
 script_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(script_path, "..", ".."))
 
-from moviad.models import Stfpm
-from moviad.trainers.trainer_stfpm import train_param_grid_search
+from moviad.models.stfpm.stfpm import STFPM
+from moviad.trainers.trainer_stfpm import TrainerSTFPM
+from moviad.utilities.custom_feature_extractor_trimmed import CustomFeatureExtractor
+#from moviad.trainers.trainer_stfpm import train_param_grid_search
 from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset, CATEGORIES
+from moviad.datasets.visa.visa_dataset import VisaDataset
 from moviad.utilities.evaluator import Evaluator, append_results
 from moviad.utilities.configurations import TaskType, Split
 
@@ -83,7 +86,19 @@ def main(args):
         # input(f"Training with params: {params}\n\nPress Enter to continue...")
         print(f"Training with params: {params}")
 
-        trained_models_filepaths = train_param_grid_search(params)
+        train_dataset = VisaDataset(dataset_path, csv_path=os.path.join(dataset_path, "split_csv", "1cls.csv"),
+                                       split=Split.TRAIN, class_name=category)
+        train_dataset.load_dataset()
+        print(f"Length train dataset: {len(train_dataset)}")
+
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+        teacher_model = CustomFeatureExtractor(model_name, ad_layers, device, True, False, None)
+        student_model = CustomFeatureExtractor(model_name, ad_layers, device, False, False, None)
+        stfpm = STFPM(teacher = teacher_model, student = student_model)
+
+        trainer = TrainerSTFPM(stfpm, train_dataloader, device, checkpoint_dir)
+        trained_models_filepaths = trainer.train(params["epochs"][0])
 
         m = "\n".join(trained_models_filepaths)
         print(f"Trained models:{m}")

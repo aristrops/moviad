@@ -131,6 +131,8 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
 
         sizes, total_size = patchcore.get_model_size_and_macs()
         print(f"Size of the memory bank: {sizes['memory_bank']['size']: .2f} MB")
+        print(f"Size of the feature extractor: {sizes['feature_extractor']['size']: .2f} MB")
+        print(f"Parameters of the feature extractor: {sizes["feature_extractor"]["params"]}")
         print(f"Total model size: {total_size: .2f} MB")
 
         # save results to csv
@@ -148,7 +150,7 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
                "pxl_pro": results["pxl_pro"],
                "memory_bank_size_MB": sizes["memory_bank"]["size"],}
         
-        append_results_to_csv(csv_path, row)
+        #append_results_to_csv(csv_path, row)
 
 
         # force garbage collector in case

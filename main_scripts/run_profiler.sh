@@ -69,31 +69,30 @@ REPEATS=3
 DATA_PATH="/mnt/disk1/borsattifr/datasets/mvtec"
 
 # Layer names to extract features from (strings, not ints)
-AD_LAYERS=("features.4" "features.7" "features.10")
+AD_LAYERS=(4 7 10)
 
-# Quantization flags: either pass --quantize_mb or nothing
-QUANTIZE_FLAGS=("--quantize_mb")
+#QUANTIZE_FLAGS=("")
 
 # --------------------------
 # Main loop
 # --------------------------
 for CATEGORY in "${CATEGORIES[@]}"; do
-  for QUANTIZE_FLAG in "${QUANTIZE_FLAGS[@]}"; do
+  #for QUANTIZE_FLAG in "${QUANTIZE_FLAGS[@]}"; do
     for SEED in "${SEEDS[@]}"; do
       for BATCH_SIZE in "${BATCH_SIZES[@]}"; do
         for RUN in $(seq 1 $REPEATS); do
 
-          # Suffix for output naming
-          if [ "$QUANTIZE_FLAG" = "--quantize_mb" ]; then
-            SUFFIX="_quantized"
-          else
-            SUFFIX=""
-          fi
+          # # Suffix for output naming
+          # if [ "$QUANTIZE_FLAG" = "--quantize_mb" ]; then
+          #   SUFFIX="_quantized"
+          # else
+          #   SUFFIX=""
+          # fi
 
-          echo "Run ${RUN}/${REPEATS} | cat=${CATEGORY}, seed=${SEED}, quantize_flag=${QUANTIZE_FLAG:-none}, batch=${BATCH_SIZE}"
+          echo "Run ${RUN}/${REPEATS} | cat=${CATEGORY}, seed=${SEED}, batch=${BATCH_SIZE}" #quantize_flag=${QUANTIZE_FLAG:-none},
 
-          MODEL_PATH="outputs/patchcore_${CATEGORY}${SUFFIX}_s${SEED}.pt"
-          QUANTIZER_PATH="outputs/patchcore_${CATEGORY}${SUFFIX}_s${SEED}_pq.bin"
+          MODEL_PATH="outputs/mobilenet_v2_100ep_IMAGENET1K_V2_4_7_10_s1.pth.tar"
+          #QUANTIZER_PATH="outputs/patchcore_${CATEGORY}${SUFFIX}_s${SEED}_pq.bin"
 
           if [ ! -f "$MODEL_PATH" ]; then
             echo "Model not found: $MODEL_PATH — skipping"
@@ -102,15 +101,14 @@ for CATEGORY in "${CATEGORIES[@]}"; do
           fi
 
           # Run profiler
-          python run_inference_profiler.py \
-            --backbone_model_name mobilenet_v2 \
+          python moviad/models/stfpm/stfpm_inference_profiler.py \
+            --backbone_model_name wide_resnet50_2 \
             --batch_size "${BATCH_SIZE}" \
             --save_path "${MODEL_PATH}" \
-            --quantizer_save_path "${QUANTIZER_PATH}" \
             --data_path "${DATA_PATH}" \
             --categories "${CATEGORY}" \
             --ad_layers_idxs "${AD_LAYERS[@]}" \
-            --device cuda:0 \
+            --device cpu \
             ${QUANTIZE_FLAG} \
             --seeds "${SEED}"
 

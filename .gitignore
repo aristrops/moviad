@@ -204,3 +204,5 @@ plots.ipynb
 
 #CSV files
 *.csv
+*.json
+*.bin
