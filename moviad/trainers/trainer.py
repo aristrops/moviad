@@ -11,7 +11,7 @@ class Trainer:
         train_dataloader: torch.utils.data.DataLoader,
         eval_dataloader: torch.utils.data.DataLoader,
         device: torch.device,
-        logger: any,
+        logger: any = None,
         save_path: str = None,
         saving_criteria: callable = None,
     ):
@@ -21,7 +21,7 @@ class Trainer:
         self.device = device
         self.logger = logger
         self.save_path = save_path
-        self.saving_criteria = saving_criteria
+        self.saving_criteria = saving_criteria or (lambda best, curr: curr["img_roc_auc"] > best["img_roc_auc"])
         self.evaluator = Evaluator(self.eval_dataloader, self.device)
 
 

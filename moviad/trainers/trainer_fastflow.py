@@ -31,7 +31,7 @@ class TrainerFastFlow(Trainer):
             loss += torch.mean(0.5 * torch.sum(hidden_variable**2, dim=(1, 2, 3)) - jacobian)
         return loss
     
-    def train(self, epochs:int, evaluation_epoch_interval: int = 10) -> (TrainerResult, TrainerResult):
+    def train(self, epochs:int, evaluation_epoch_interval: int = 1) -> (TrainerResult, TrainerResult):
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters()
@@ -57,7 +57,10 @@ class TrainerFastFlow(Trainer):
             avg_batch_loss = 0.0
             print("Epoch: ", epoch)
             for batch in tqdm(self.train_dataloader):
-                batch = batch.to(self.device)
+                if isinstance(batch, list):
+                    batch = [b.to(self.device) for b in batch]
+                else:
+                    batch = batch.to(self.device)
                 hidden_variables, jacobians = self.model(batch)
                 loss = TrainerFastFlow.fastflow_loss(hidden_variables, jacobians)
 
@@ -76,12 +79,23 @@ class TrainerFastFlow(Trainer):
 
             if (epoch + 1) % evaluation_epoch_interval == 0 and epoch != 0:
                 print("Evaluating model...")
-                metrics = self.evaluator.evaluate(self.model)
+                metrics_tuple = self.evaluator.evaluate(self.model)
+
+                metrics = {
+                    "img_roc_auc": metrics_tuple[0],
+                    "pxl_roc_auc": metrics_tuple[1],
+                    "img_f1": metrics_tuple[2],
+                    "pxl_f1": metrics_tuple[3],
+                    "img_pr_auc": metrics_tuple[4],
+                    "pxl_pr_auc": metrics_tuple[5],
+                    "pxl_au_pro": metrics_tuple[6],
+                }
                 
-                if self.saving_criteria(best_metrics, metrics) and self.save_path is not None: 
-                    print("Saving model...")
-                    torch.save(self.model.state_dict(), self.save_path)
-                    print(f"Model saved to {self.save_path}")
+                if self.saving_criteria is not None and self.save_path is not None:
+                    if self.saving_criteria(best_metrics, metrics): 
+                        print("Saving model...")
+                        torch.save(self.model.state_dict(), self.save_path)
+                        print(f"Model saved to {self.save_path}")
                 
                 # update the best metrics
                 best_metrics = Trainer.update_best_metrics(best_metrics, metrics)

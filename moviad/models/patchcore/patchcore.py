@@ -97,7 +97,7 @@ class PatchCore(nn.Module):
 
         #extract the features for the input tensor
         self.memory_bank.to(self.device)
-        if self.compression_method is not None:
+        if self.compression_method is not None: #we already have the features extracted and compressed, so we can skip to the embedding generation step
             features = input_tensor
             features = [f.to(dtype = torch.float32) for f in features]
         else:

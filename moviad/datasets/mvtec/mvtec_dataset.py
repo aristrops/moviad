@@ -119,32 +119,24 @@ class MVTecDataset(IadDataset):
         self.quality = quality
         self.compression_method = compression_method
 
-        if norm and self.apply_compression:
-            t_list = [lambda img: compressor.compress_image(img, compression_method=self.compression_method, quality = self.quality, apply = self.apply_compression),
-                transforms.ToTensor(),
-                #transforms.Resize(img_size, antialias=True),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
-            ]
-        elif self.apply_compression and not norm:
-            t_list = [lambda img: compressor.compress_image(img, compression_method = self.compression_method, quality = self.quality, apply = self.apply_compression),
-                transforms.ToTensor(),
-                transforms.Resize(img_size, antialias=True),
-            ]
-        elif not self.apply_compression and norm:
-            t_list = [
-                transforms.Resize(img_size, antialias=True),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
-            ]
+        t_list = []
+
+        if self.apply_compression:
+            t_list.append(
+                lambda img: compressor.apply_image_compression(
+                    img, compression_method=self.compression_method, quality = self.quality))
         else:
-            t_list = [
-                transforms.Resize(img_size, antialias=True),
-                transforms.ToTensor(),
-            ]
+            t_list.append(transforms.Resize(img_size, antialias=True))
+        
+        t_list.append(transforms.ToTensor())
+
+        if self.apply_compression and not norm:
+            t_list.append(transforms.Resize(img_size, antialias=True))
+        
+        if norm:
+            t_list.append(transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ))
 
         self.transform_image = transforms.Compose(t_list)
 

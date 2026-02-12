@@ -15,7 +15,7 @@ from moviad.utilities.configurations import TaskType, LabelName
 from moviad.models.patchcore.product_quantizer import ProductQuantizer
 
 
-def size_computing(dataset_path, categories, device, backbone, layer_idxs, image_compression_method, quality, 
+def size_computing(dataset_path, categories, device, backbone, layer_idxs, quality, 
                    feature_compression_method, sampling_ratio, pq_method, pq_subspaces, centroids_per_subspace):
     
     for category in categories:
@@ -26,7 +26,7 @@ def size_computing(dataset_path, categories, device, backbone, layer_idxs, image
 
         quantizer = ProductQuantizer(subspaces=976)
         
-        compressor = CustomFeatureCompressor(device, image_compression_method=image_compression_method, feature_compression_method = feature_compression_method, 
+        compressor = CustomFeatureCompressor(device, feature_compression_method = feature_compression_method, 
                                 quality = quality, compression_ratio = sampling_ratio, pq_method = pq_method, quantizer=quantizer)
         feature_extractor = CustomFeatureExtractor(backbone, layer_idxs, device = device)
         
@@ -47,7 +47,7 @@ def size_computing(dataset_path, categories, device, backbone, layer_idxs, image
                 resized_image_size = byte_io.tell()
             sizes["original"].append(resized_image_size)
 
-            compressed_image, compressed_size = compressor.compress_image(original_image, quality = quality, compression_method = image_compression_method, apply = True, return_sizes = True)
+            compressed_image, compressed_size = compressor.compress_image(original_image, quality = quality, apply = True, return_sizes = True)
             sizes["compressed"].append(compressed_size)
         
         if "pq" in feature_compression_method:
@@ -121,7 +121,6 @@ def main():
     parser.add_argument("--device", type = str, help = "Where to run the script")
     parser.add_argument("--backbone", type = str, help = "CNN model to use for feature extraction")
     parser.add_argument("--layer_idxs", type = str, nargs = "+", help = "List of layers to use for extraction")
-    parser.add_argument("--image_compression_method", type = str, default = "JPEG", help = "Compression method to use on images, e.g. JPEG, PNG, ...")
     parser.add_argument("--quality", type = int, default = 50, help = "Amount of compression to be applied to the image when compressing with JPEG")
     parser.add_argument("--feature_compression_method", type = str, default = None, nargs = "+", help = "Compression method to use on features, e.g. random sampling, ...")
     parser.add_argument("--sampling_ratio", type = float, default = 0.25, help = "Percentage of features that have to be kept")
@@ -141,8 +140,8 @@ def main():
     if args.pq_method not in pq_methods:
         raise ValueError(f"Unsupported PQ method: {args.pq_method}. Choose from {pq_methods}")
 
-    size_computing(args.dataset_path, args.categories, device, args.backbone, args.layer_idxs, args.image_compression_method, 
-                      args.quality, args.feature_compression_method, args.sampling_ratio, args.pq_method, args.pq_subspaces, args.centroids_per_subspace)
+    size_computing(args.dataset_path, args.categories, device, args.backbone, args.layer_idxs, args.quality, 
+                   args.feature_compression_method, args.sampling_ratio, args.pq_method, args.pq_subspaces, args.centroids_per_subspace)
     
 
 if __name__ == "__main__":

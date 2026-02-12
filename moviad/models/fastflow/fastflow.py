@@ -11,10 +11,10 @@ from timm.models.cait import Cait
 from scipy.stats import special_ortho_group
 import warnings
 
-def create_fastflow(img_shape, backbone_name, device):
-    backbone_name = "wide_resnet50_2"
+def create_fastflow(img_shape, backbone_name, compression_method, sampling_ratio = 1, device=None):
+    #backbone_name = "wide_resnet50_2"
 
-    fast_flow_model = CompleteFastFlowModel(backbone_name,input_size= img_shape, normalize = True)
+    fast_flow_model = CompleteFastFlowModel(backbone_name,input_size= img_shape, normalize = True, compression_method = compression_method, sampling_ratio = sampling_ratio)
     fast_flow_module = FastflowModel(input_size = img_shape,flow_steps=8,conv3x3_only=False,hidden_ratio=1.0,channels=fast_flow_model.channels,scales=fast_flow_model.scales)
     fast_flow_model.fast_flow_module = fast_flow_module
 
@@ -593,10 +593,10 @@ class AnomalyMapGenerator(nn.Module):
 
 
 class CompleteFastFlowModel(nn.Module):
-    def __init__(self,backbone_name,input_size,normalize):
+    def __init__(self,backbone_name,input_size,normalize, compression_method=None, sampling_ratio = 1):
         super().__init__()
 
-        if backbone_name in ["cait_m48_448", "deit_base_distilled_patch16_384"]:
+        if backbone_name in ["cait_m48_448", "deit_base_distilled_patch16_224"]:
             feature_extractor = timm.create_model(backbone_name, pretrained=True)
         elif backbone_name in ["resnet18", "wide_resnet50_2"]:
             feature_extractor = timm.create_model(
@@ -610,8 +610,9 @@ class CompleteFastFlowModel(nn.Module):
         self.input_size = input_size
         self.feature_extractor = feature_extractor
         self.anomaly_map_generator = AnomalyMapGenerator(input_size=input_size)
+        self.compression_method = compression_method
 
-        if backbone_name in ["cait_m48_448", "deit_base_distilled_patch16_384"]:
+        if backbone_name in ["cait_m48_448", "deit_base_distilled_patch16_224"]:
             channels = [768]
             scales = [16]
         elif backbone_name in ["resnet18", "wide_resnet50_2"]:
@@ -631,11 +632,16 @@ class CompleteFastFlowModel(nn.Module):
                             elementwise_affine=True,
                         )
                     )
+
         else:
             raise ValueError(
                 f"Backbone {backbone_name} is not supported. List of available backbones are "
-                "[cait_m48_448, deit_base_distilled_patch16_384, resnet18, wide_resnet50_2]."
+                "[cait_m48_448, deit_base_distilled_patch16_224, resnet18, wide_resnet50_2]."
             )
+
+        if self.compression_method is not None and "random_sampling" in self.compression_method:
+            #fix the channels at the dimension of the reduced feature maps
+            channels = [int(c * sampling_ratio) for c in channels]
 
         # freeze the feature extractor
         self.feature_extractor.eval()
@@ -647,15 +653,12 @@ class CompleteFastFlowModel(nn.Module):
 
 
     def forward(self,input_tensor):
-        if isinstance(self.feature_extractor, VisionTransformer):
-            # print("get_vit_features")
-            features = self._get_vit_features(input_tensor)
-        elif isinstance(self.feature_extractor, Cait):
-            # print("get_cait_features")
-            features = self._get_cait_features(input_tensor)
+
+        if self.compression_method is not None:
+            features = input_tensor
+            #features = [f.dtype(torch.float32) for f in features]
         else:
-            # print("get_cnn_features")
-            features = self._get_cnn_features(input_tensor)
+            features = self._extract_features(input_tensor)
 
         hidden_variables, log_jacobians = self.fast_flow_module(features)
 
@@ -668,6 +671,21 @@ class CompleteFastFlowModel(nn.Module):
             return return_val
 
         return (hidden_variables, log_jacobians)
+    
+    
+    #extract features from the backbone
+    def _extract_features(self, input_tensor: Tensor) -> List[Tensor]:
+        if isinstance(self.feature_extractor, VisionTransformer):
+            # print("get_vit_features")
+            features = self._get_vit_features(input_tensor)
+        elif isinstance(self.feature_extractor, Cait):
+            # print("get_cait_features")
+            features = self._get_cait_features(input_tensor)
+        else:
+            # print("get_cnn_features")
+            features = self._get_cnn_features(input_tensor)
+        
+        return features
 
 
     def _get_cnn_features(self, input_tensor: Tensor) -> List[Tensor]:
