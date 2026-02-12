@@ -1,3 +1,4 @@
+import os
 import random
 import argparse
 import gc
@@ -83,7 +84,11 @@ def train_fastflow(dataset_path: str, category: str, backbone: str, compress_ima
 
     # save the model
     if save_path:
-        torch.save(model.state_dict(), save_path)
+        save_path = os.path.join(save_path, "fastflow", category)
+        os.makedirs(save_path, exist_ok=True)
+        full_path = os.path.join(save_path, f"{backbone}_compress_images_{compress_images}_feature_compression_{feature_compression_method}_sampling_{sampling_ratio}.pt")
+        torch.save(model.state_dict(), full_path)
+        print(f"Model saved at: {full_path}")
 
     # force garbage collector in case
     del model
@@ -100,7 +105,7 @@ def main():
 
     parser.add_argument("--mode", choices=["train", "test"], help="Script execution mode: train or test")
     parser.add_argument("--dataset_path", type=str, help="Path of the directory where the dataset is stored")
-    parser.add_argument("--category", type=str, help="Dataset category to test")
+    parser.add_argument("--categories", type=str, nargs ="+", help="Dataset category to test")
     parser.add_argument("--backbone", type=str, help="Model backbone")
     parser.add_argument("--compress_images", action="store_true", help="Compress images using JPEG or WEBP")
     parser.add_argument("--quality", type=int, default=50, help="Compression quality of images")
@@ -121,7 +126,8 @@ def main():
     device = torch.device(args.device)
 
     if args.mode == "train":
-        train_fastflow(args.dataset_path, args.category, args.backbone, args.compress_images, args.quality, args.feature_compression_method, 
+        for category in args.categories:
+            train_fastflow(args.dataset_path, category, args.backbone, args.compress_images, args.quality, args.feature_compression_method, 
                        args.sampling_ratio, args.pq_subspaces,args.save_path, device, args.epochs)
 
 

@@ -124,7 +124,7 @@ class MVTecDataset(IadDataset):
         if self.apply_compression:
             t_list.append(
                 lambda img: compressor.apply_image_compression(
-                    img, compression_method=self.compression_method, quality = self.quality))
+                    img, quality = self.quality))
         else:
             t_list.append(transforms.Resize(img_size, antialias=True))
         
