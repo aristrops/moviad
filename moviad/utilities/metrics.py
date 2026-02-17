@@ -160,6 +160,10 @@ def cal_pr_auc_pxl(scores: np.ndarray, gt_masks: np.ndarray) -> float:
 
 def cal_pro_auc_pxl(scores: np.ndarray, gt_masks: np.ndarray) -> float:
     def rescale(x):
+        min_val = x.min()
+        max_val = x.max()
+        if max_val - min_val == 0:
+            return np.zeros_like(x)
         return (x - x.min()) / (x.max() - x.min())
 
     """
@@ -233,6 +237,10 @@ def cal_pro_auc_pxl(scores: np.ndarray, gt_masks: np.ndarray) -> float:
     fprs_selected = fprs[idx]
     fprs_selected = rescale(fprs_selected)
     pros_mean_selected = rescale(pros_mean[idx])
+
+    if len(fprs_selected) < 2:
+        return 0.0
+
     per_pixel_roc_auc = auc(fprs_selected, pros_mean_selected)
 
     return per_pixel_roc_auc

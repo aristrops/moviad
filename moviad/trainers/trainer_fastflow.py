@@ -31,7 +31,7 @@ class TrainerFastFlow(Trainer):
             loss += torch.mean(0.5 * torch.sum(hidden_variable**2, dim=(1, 2, 3)) - jacobian)
         return loss
     
-    def train(self, epochs:int, evaluation_epoch_interval: int = 10) -> (TrainerResult, TrainerResult):
+    def train(self, epochs:int, evaluation_epoch_interval: int = 2) -> (TrainerResult, TrainerResult):
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters()

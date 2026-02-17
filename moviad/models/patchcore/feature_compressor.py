@@ -166,7 +166,7 @@ class CustomFeatureCompressor():
             image = image.resize(self.img_size)
 
         buffer = io.BytesIO()
-        image.save(buffer, format = "webp", quality = quality)
+        image.save(buffer, format = "WEBP", quality = quality)
         buffer.seek(0)
 
         if return_sizes:

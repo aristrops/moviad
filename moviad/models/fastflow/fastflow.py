@@ -11,6 +11,9 @@ from timm.models.cait import Cait
 from scipy.stats import special_ortho_group
 import warnings
 
+import torchvision
+from torchvision.models.feature_extraction import create_feature_extractor
+
 def create_fastflow(img_shape, backbone_name, compression_method, sampling_ratio = 1, device=None):
     #backbone_name = "wide_resnet50_2"
 
@@ -19,7 +22,7 @@ def create_fastflow(img_shape, backbone_name, compression_method, sampling_ratio
     fast_flow_model.fast_flow_module = fast_flow_module
 
     fast_flow_model.feature_extractor = fast_flow_model.feature_extractor.to(device)
-    if backbone_name in ["resnet18", "wide_resnet50_2"]:
+    if backbone_name in ["resnet18", "wide_resnet50_2", "mobilenet_v2"]:
         fast_flow_model.norms = fast_flow_model.norms.to(device)
     fast_flow_model.fast_flow_module  = fast_flow_model.fast_flow_module.to(device)
     fast_flow_model.device = device
@@ -593,7 +596,7 @@ class AnomalyMapGenerator(nn.Module):
 
 
 class CompleteFastFlowModel(nn.Module):
-    def __init__(self,backbone_name,input_size,normalize, compression_method=None, sampling_ratio = 1):
+    def __init__(self,backbone_name, input_size, normalize, compression_method=None, sampling_ratio = 1):
         super().__init__()
 
         if backbone_name in ["cait_m48_448", "deit_base_distilled_patch16_224"]:
@@ -605,8 +608,12 @@ class CompleteFastFlowModel(nn.Module):
                 features_only=True,
                 out_indices=[1, 2, 3],
             )
-
-       
+        elif backbone_name in ["mobilenet_v2"]:
+            return_nodes = ["features.3", "features.8", "features.14"]
+            model = getattr(torchvision.models, backbone_name)(weights = "IMAGENET1K_V1")
+            return_nodes = {layer: layer for layer in return_nodes} 
+            feature_extractor = create_feature_extractor(model=model, return_nodes=return_nodes)
+        
         self.input_size = input_size
         self.feature_extractor = feature_extractor
         self.anomaly_map_generator = AnomalyMapGenerator(input_size=input_size)
@@ -615,9 +622,24 @@ class CompleteFastFlowModel(nn.Module):
         if backbone_name in ["cait_m48_448", "deit_base_distilled_patch16_224"]:
             channels = [768]
             scales = [16]
-        elif backbone_name in ["resnet18", "wide_resnet50_2"]:
-            channels = self.feature_extractor.feature_info.channels()
-            scales = self.feature_extractor.feature_info.reduction()
+        elif backbone_name in ["resnet18", "wide_resnet50_2", "mobilenet_v2"]:
+            if backbone_name in ["mobilenet_v2"]:
+                #run forward to compute channels and scales
+                device = next(self.parameters()).device
+                dummy = torch.zeros(1, 3, input_size[0], input_size[1])
+                dummy = dummy.to(device)
+
+                with torch.no_grad():
+                    outputs = self.feature_extractor(dummy)
+
+                features = list(outputs.values())
+
+                channels = [f.shape[1] for f in features]
+                scales = [input_size[0] // f.shape[2] for f in features]
+
+            else:
+                channels = self.feature_extractor.feature_info.channels()
+                scales = self.feature_extractor.feature_info.reduction()
 
             # for transformers, use their pretrained norm w/o grad
             # for resnets, self.norms are trainable LayerNorm
@@ -636,7 +658,7 @@ class CompleteFastFlowModel(nn.Module):
         else:
             raise ValueError(
                 f"Backbone {backbone_name} is not supported. List of available backbones are "
-                "[cait_m48_448, deit_base_distilled_patch16_224, resnet18, wide_resnet50_2]."
+                "[cait_m48_448, deit_base_distilled_patch16_224, resnet18, wide_resnet50_2, mobilenet_v2]."
             )
 
         if self.compression_method is not None and "random_sampling" in self.compression_method:
@@ -681,7 +703,7 @@ class CompleteFastFlowModel(nn.Module):
         elif isinstance(self.feature_extractor, Cait):
             # print("get_cait_features")
             features = self._get_cait_features(input_tensor)
-        else:
+        elif isinstance:
             # print("get_cnn_features")
             features = self._get_cnn_features(input_tensor)
         
@@ -689,24 +711,21 @@ class CompleteFastFlowModel(nn.Module):
 
 
     def _get_cnn_features(self, input_tensor: Tensor) -> List[Tensor]:
-        """Get CNN-based features.
+        """Get CNN-based features."""
 
-        Args:
-            input_tensor (Tensor): Input Tensor.
-
-        Returns:
-            List[Tensor]: List of features.
-        """
         with torch.no_grad():
-            features = self.feature_extractor(input_tensor.to(self.device)) 
-            #features = features.to(self.device_1)
-            # for i,feature in enumerate(features):
-            #     print(feature.shape)
-            #     print(feature.device)
-                
-            features = [feature for feature in features]
+
+            outputs = self.feature_extractor(input_tensor)
+
+            if isinstance(outputs, dict):
+                features = list(outputs.values())
+            else:
+                features = outputs
+
             features = [self.norms[i](feature) for i, feature in enumerate(features)]
+
             return features
+
 
     def _get_cait_features(self, input_tensor: Tensor) -> List[Tensor]:
         """Get Class-Attention-Image-Transformers (CaiT) features.

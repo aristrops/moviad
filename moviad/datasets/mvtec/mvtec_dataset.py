@@ -97,7 +97,6 @@ class MVTecDataset(IadDataset):
         compressor: CustomFeatureCompressor = None,
         apply_compression: bool = False,
         quality: int = 50,
-        compression_method = "JPEG",
         norm: bool = True,
         img_size=(224, 224),
         gt_mask_size: Optional[tuple] = None,
@@ -117,7 +116,6 @@ class MVTecDataset(IadDataset):
         self.preload_imgs = preload_imgs
         self.apply_compression = apply_compression
         self.quality = quality
-        self.compression_method = compression_method
 
         t_list = []
 
@@ -181,7 +179,7 @@ class MVTecDataset(IadDataset):
             return
 
         if self.apply_compression:
-            print(f"Applying {self.compression_method} image compression with quality of {self.quality}")
+            print(f"Applying WEBP image compression with quality of {self.quality}")
 
         root = Path(self.root_category)
 

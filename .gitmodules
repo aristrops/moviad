@@ -1,0 +1,3 @@
+[submodule "moviad/dinomaly"]
+	path = moviad/dinomaly
+	url = https://github.com/guojiajeremy/Dinomaly

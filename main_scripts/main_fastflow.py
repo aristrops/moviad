@@ -14,7 +14,6 @@ from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset
 from moviad.models.fastflow.fastflow import create_fastflow
 from moviad.trainers.trainer_fastflow import TrainerFastFlow
 from moviad.utilities.configurations import TaskType, Split
-from moviad.utilities.custom_feature_extractor_trimmed import CustomFeatureExtractor
 from moviad.models.patchcore.features_dataset import CompressedFeaturesDataset
 from moviad.models.patchcore.feature_compressor import CustomFeatureCompressor
 from moviad.models.patchcore.product_quantizer import ProductQuantizer
@@ -67,28 +66,27 @@ def train_fastflow(dataset_path: str, category: str, backbone: str, compress_ima
             feature_vectors = compressor.collect_feature_vectors(test_dataset, feature_extractor)
             compressor.fit_quantizers(feature_vectors)
         
-        test_dataset = CompressedFeaturesDataset(feature_extractor, test_dataset, compressor, device)   
-        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True, collate_fn=test_dataset.collate_fn)
+        test_dataset = CompressedFeaturesDataset(feature_extractor, test_dataset, compressor, device, split = "test")   
+        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=False, collate_fn=test_dataset.collate_fn)
     else:
-        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
+        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=False)
 
     model = create_fastflow(img_size, backbone, feature_compression_method, sampling_ratio, device=device).to(device)
-
-    trainer = TrainerFastFlow(
-        model=model,
-        train_dataloader=train_dataloader,
-        eval_dataloader=test_dataloader,
-        device=device,
-    )
-    trainer.train(epochs)
 
     # save the model
     if save_path:
         save_path = os.path.join(save_path, "fastflow", category)
         os.makedirs(save_path, exist_ok=True)
         full_path = os.path.join(save_path, f"{backbone}_compress_images_{compress_images}_feature_compression_{feature_compression_method}_sampling_{sampling_ratio}.pt")
-        torch.save(model.state_dict(), full_path)
-        print(f"Model saved at: {full_path}")
+
+    trainer = TrainerFastFlow(
+        model=model,
+        train_dataloader=train_dataloader,
+        eval_dataloader=test_dataloader,
+        device=device,
+        save_path=full_path if save_path else None
+    )
+    trainer.train(epochs)
 
     # force garbage collector in case
     del model
