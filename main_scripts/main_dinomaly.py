@@ -1,10 +1,13 @@
 # This is a sample Python script.
+import time
 
 # Press ⌃R to execute it or replace it with your code.
 # Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
 
 import torch
 import torch.nn as nn
+from tqdm import tqdm
+
 from moviad.dinomaly.dataset import get_data_transforms, get_strong_transforms
 from torchvision.datasets import ImageFolder
 import numpy as np
@@ -79,12 +82,12 @@ def setup_seed(seed):
 def train(item):
     setup_seed(1)
     print_fn(item)
-    total_iters = 5000
+    num_epochs = 100
     batch_size = 16
-    image_size = 448
+    image_size = (448, 448)
     crop_size = 392
 
-    compressor = CustomFeatureCompressor(device, quality=args.quality, img_size=image_size)
+    compressor = CustomFeatureCompressor(device, quality=args.quality, img_size=image_size, feature_compression_method=None, compression_ratio=1)
 
     data_transform, gt_transform = get_data_transforms(image_size, crop_size)
 
@@ -92,13 +95,18 @@ def train(item):
     test_path = os.path.join(args.data_path, item)
 
     train_data = MVTecDataset(TaskType.SEGMENTATION, args.data_path, item, "train", compressor, args.compress_images, args.quality, img_size=image_size)
-    test_data = MVTecDataset(TaskType.SEGMENTATION, args.data_path, item, "test", compressor, args.compress_images, args.quality, img_size=image_size)
-    train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=4,
-                                                   drop_last=True)
-    test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=4)
+    train_data.load_dataset()
+    print(f"Length of training data: {len(train_data)}")
 
-    # encoder_name = 'dinov2reg_vit_small_14'
-    encoder_name = 'dinov2reg_vit_base_14'
+    test_data = MVTecDataset(TaskType.SEGMENTATION, args.data_path, item, "test", compressor, args.compress_images, args.quality, img_size=image_size)
+    test_data.load_dataset()
+    print(f"Length of testing data: {len(test_data)}")
+    train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=0,
+                                                   drop_last=True)
+    test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=0)
+
+    encoder_name = 'dinov2reg_vit_small_14'
+    #encoder_name = 'dinov2reg_vit_base_14'
     # encoder_name = 'dinov2reg_vit_large_14'
 
     target_layers = [2, 3, 4, 5, 6, 7, 8, 9]
@@ -145,6 +153,8 @@ def train(item):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
+    total_iters = int(np.ceil(num_epochs * len(train_dataloader) / batch_size))
+
     optimizer = StableAdamW([{'params': trainable.parameters()}],
                             lr=2e-3, betas=(0.9, 0.999), weight_decay=1e-4, amsgrad=True, eps=1e-8)
     lr_scheduler = WarmCosineScheduler(optimizer, base_value=2e-3, final_value=2e-4, total_iters=total_iters,
@@ -153,11 +163,26 @@ def train(item):
     print_fn('train image number:{}'.format(len(train_data)))
 
     it = 0
-    for epoch in range(int(np.ceil(total_iters / len(train_dataloader)))):
+    epochs = 0
+    best_auroc = -float("inf")
+
+    save_name = f"{encoder_name}_compress_images_{args.compress_images}_quality_{args.quality}.pt"
+    save_dir = os.path.join(args.save_dir, item)
+    os.makedirs(save_dir, exist_ok=True)
+
+    for epoch in range(num_epochs):
         model.train()
+        start_epoch_time = time.time()
 
         loss_list = []
-        for img in train_dataloader:
+
+        progress_bar = tqdm(
+            train_dataloader,
+            desc=f"Epoch {epoch + 1}",
+            leave=True
+        )
+
+        for img in progress_bar:
             img = img.to(device)
 
             en, de = model(img)
@@ -168,20 +193,16 @@ def train(item):
 
             optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm(trainable.parameters(), max_norm=0.1)
+            nn.utils.clip_grad_norm_(trainable.parameters(), max_norm=0.1)
 
             optimizer.step()
             loss_list.append(loss.item())
             lr_scheduler.step()
 
-            if (it + 1) % 5000 == 0:
-                results = evaluation_batch(model, test_dataloader, device, max_ratio=0.01, resize_mask=256)
-                auroc_sp, ap_sp, f1_sp, auroc_px, ap_px, f1_px, aupro_px = results
-
-                print_fn(
-                    '{}: I-Auroc:{:.4f}, I-AP:{:.4f}, I-F1:{:.4f}, P-AUROC:{:.4f}, P-AP:{:.4f}, P-F1:{:.4f}, P-AUPRO:{:.4f}'.format(
-                        item, auroc_sp, ap_sp, f1_sp, auroc_px, ap_px, f1_px, aupro_px))
-                model.train()
+            # Update progress bar metrics
+            progress_bar.set_postfix(
+                loss=f"{loss.item():.4f}"
+            )
 
             it += 1
             if it == total_iters:
@@ -189,6 +210,26 @@ def train(item):
             if (it + 1) % 100 == 0:
                 print_fn('iter [{}/{}], loss:{:.4f}'.format(it, total_iters, np.mean(loss_list)))
                 loss_list = []
+
+        epoch_time = time.time() - start_epoch_time
+        print(f"Epoch {epoch + 1} finished in {epoch_time / 60:.2f} minutes")
+        epochs += 1
+
+        if (epochs + 1) % 10 == 0:
+            print("Evaluating model...")
+            results = evaluation_batch(model, test_dataloader, device, max_ratio=0.01, resize_mask=256)
+            auroc_sp, ap_sp, f1_sp, auroc_px, ap_px, f1_px, aupro_px = results
+
+            print_fn(
+                '{}: I-Auroc:{:.4f}, I-AP:{:.4f}, I-F1:{:.4f}, P-AUROC:{:.4f}, P-AP:{:.4f}, P-F1:{:.4f}, P-AUPRO:{:.4f}'.format(
+                    item, auroc_sp, ap_sp, f1_sp, auroc_px, ap_px, f1_px, aupro_px))
+
+            if auroc_sp > best_auroc:
+                best_auroc = auroc_sp
+                torch.save(model.state_dict(), os.path.join(save_dir, save_name))
+                print(f"New best model saved at {os.path.join(save_dir, save_name)}")
+
+            model.train()
 
     # torch.save(model.state_dict(), os.path.join(args.save_dir, args.save_name, 'model.pth'))
 
@@ -215,7 +256,7 @@ if __name__ == '__main__':
     logger = get_logger(args.save_name, os.path.join(args.save_dir, args.save_name))
     print_fn = logger.info
 
-    device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print_fn(device)
 
     result_list = []

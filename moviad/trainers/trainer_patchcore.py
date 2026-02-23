@@ -63,13 +63,19 @@ class TrainerPatchCore(Trainer):
                 self.logger.watch(self.model)
             print("Embedding Extraction:")
             for batch in tqdm(iter(self.train_dataloader)):
-                if isinstance(batch, tuple):
-                    embedding = self.patchore_model(batch[0].to(self.device))
-                if isinstance(batch, list):
-                    batch = [b.to(self.device) for b in batch]
-                    embedding = self.patchore_model(batch)
+                if isinstance(batch, (tuple, list)):
+                    inputs = batch[0]
                 else:
-                    embedding = self.model(batch.to(self.device))
+                    inputs = batch
+
+                inputs = inputs.to(self.device)
+
+                embedding = self.patchore_model(inputs)
+                # if isinstance(batch, list):
+                #     batch = [b.to(self.device) for b in batch]
+                #     embedding = self.patchore_model(batch)
+                # else:
+                #     embedding = self.model(batch.to(self.device))
 
                 #print(f"Embedding Shape: {embedding.shape}")
 
@@ -111,17 +117,17 @@ class TrainerPatchCore(Trainer):
             self.evaluator.device = self.device
 
             if self.evaluate:
-                img_roc, pxl_roc, f1_img, f1_pxl, img_pr, pxl_pr, pxl_pro = self.evaluator.evaluate(self.model)
+                results = self.evaluator.evaluate_vad_space(self.model)
 
-                results = {
-                        "img_roc": img_roc,
-                        "pxl_roc": pxl_roc,
-                        "f1_img": f1_img,
-                        "f1_pxl": f1_pxl,
-                        "img_pr": img_pr,
-                        "pxl_pr": pxl_pr,
-                        "pxl_pro": pxl_pro
-                    }
+                # results = {
+                #         "img_roc": img_roc,
+                #         "pxl_roc": pxl_roc,
+                #         "f1_img": f1_img,
+                #         "f1_pxl": f1_pxl,
+                #         "img_pr": img_pr,
+                #         "pxl_pr": pxl_pr,
+                #         "pxl_pro": pxl_pro
+                #     }
 
                 # if self.logger is not None:
                 #     self.logger.log({
@@ -141,13 +147,13 @@ class TrainerPatchCore(Trainer):
 
                 print("End training performances:")
                 print(f"""
-                    img_roc: {img_roc} \n
-                    pxl_roc: {pxl_roc} \n
-                    f1_img: {f1_img} \n
-                    f1_pxl: {f1_pxl} \n
-                    img_pr: {img_pr} \n
-                    pxl_pr: {pxl_pr} \n
-                    pxl_pro: {pxl_pro} \n
+                    img_roc: {results["img_roc_auc"]} \n
+                    pxl_roc: {results["pxl_roc_auc"]} \n
+                    f1_img: {results["img_f1"]} \n
+                    f1_pxl: {results["pxl_f1"]} \n
+                    img_pr: {results["img_pr_auc"]} \n
+                    pxl_pr: {results["pxl_pr_auc"]} \n
+                    pxl_pro: {results["pxl_au_pro"]} \n
                 """)
                 #print(metrics)
                 

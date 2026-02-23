@@ -188,6 +188,7 @@ class MVTecDataset(IadDataset):
             for f in root.glob(r"**/*")
             if f.suffix in IMG_EXTENSIONS
             and f.parts[-2] != "example"
+            and "generated_anomalies" not in f.parts
         ]
 
         if not samples_list:
