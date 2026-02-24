@@ -206,3 +206,12 @@ plots.ipynb
 *.csv
 *.json
 *.bin
+*.jpg
+*jpeg
+*npy
+*.idea
+*.pth
+__MACOSX/
+.DS_Store
+._*
+*.txt
