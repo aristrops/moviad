@@ -57,11 +57,13 @@ class TrainerFastFlow(Trainer):
             avg_batch_loss = 0.0
             print("Epoch: ", epoch)
             for batch in tqdm(self.train_dataloader):
-                if isinstance(batch, list):
-                    batch = [b.to(self.device) for b in batch]
+                if isinstance(batch, (tuple, list)):
+                    inputs = batch[0]
                 else:
-                    batch = batch.to(self.device)
-                hidden_variables, jacobians = self.model(batch)
+                    inputs = batch
+
+                inputs = inputs.to(self.device)
+                hidden_variables, jacobians = self.model(inputs)
                 loss = TrainerFastFlow.fastflow_loss(hidden_variables, jacobians)
 
                 self.optimizer.zero_grad()
@@ -79,18 +81,8 @@ class TrainerFastFlow(Trainer):
 
             if (epoch + 1) % evaluation_epoch_interval == 0 and epoch != 0:
                 print("Evaluating model...")
-                metrics_tuple = self.evaluator.evaluate(self.model)
+                metrics = self.evaluator.evaluate_vad_space(self.model)
 
-                metrics = {
-                    "img_roc_auc": metrics_tuple[0],
-                    "pxl_roc_auc": metrics_tuple[1],
-                    "img_f1": metrics_tuple[2],
-                    "pxl_f1": metrics_tuple[3],
-                    "img_pr_auc": metrics_tuple[4],
-                    "pxl_pr_auc": metrics_tuple[5],
-                    "pxl_au_pro": metrics_tuple[6],
-                }
-                
                 if self.saving_criteria is not None and self.save_path is not None:
                     if self.saving_criteria(best_metrics, metrics): 
                         print("Saving model...")

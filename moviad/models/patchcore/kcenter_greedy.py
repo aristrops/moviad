@@ -112,7 +112,8 @@ class CoresetExtractor:
 
             if self.quantized:
                 z_lib = torch.int_repr(z_lib).to(torch.float64).cpu()
-            z_lib = torch.tensor(transformer.fit_transform(z_lib))
+            z_lib_np = transformer.fit_transform(z_lib).astype(np.float32)
+            z_lib = torch.from_numpy(z_lib_np)
             print(f"   DONE.                 Transformed dim = {z_lib.shape}.")
         except ValueError:
             print("   Error: could not project vectors. Please increase `eps`.")
