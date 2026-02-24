@@ -103,17 +103,17 @@ class Evaluator:
 
         # TODO: Implement Add False-alarm rate
 
-        # metrics = {
-        #     "img_roc_auc": img_roc_auc,
-        #     "pxl_roc_auc": pxl_roc_auc,
-        #     "img_f1": img_f1,
-        #     "pxl_f1": pxl_f1,
-        #     "img_pr_auc": img_pr_auc,
-        #     "pxl_pr_auc": pxl_pr_auc,
-        #     "pxl_au_pro": pxl_au_pro
-        # }
+        metrics = {
+            "img_roc_auc": img_roc_auc,
+            "pxl_roc_auc": pxl_roc_auc,
+            "img_f1": img_f1,
+            "pxl_f1": pxl_f1,
+            "img_pr_auc": img_pr_auc,
+            "pxl_pr_auc": pxl_pr_auc,
+            "pxl_au_pro": pxl_au_pro
+        }
 
-        return img_roc_auc, pxl_roc_auc, img_f1, pxl_f1, img_pr_auc, pxl_pr_auc, pxl_au_pro
+        return metrics
 
 
     def evaluate_vad_space(self, model):

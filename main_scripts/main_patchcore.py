@@ -19,6 +19,8 @@ from moviad.models.patchcore.features_dataset import CompressedFeaturesDataset
 from moviad.models.patchcore.feature_compressor import CustomFeatureCompressor
 from moviad.models.patchcore.product_quantizer import ProductQuantizer
 
+from moviad.models.patchcore.autoencoder import FeatureAutoencoder
+
 AD_LAYERS = {
     ("features.4", "features.7", "features.10"): "low",
     ("features.7", "features.10", "features.13"): "mid",
@@ -48,15 +50,29 @@ def append_results_to_csv(csv_path: str, row: dict):
     df.to_csv(csv_path, index=False)
 
 
-def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backbone: str, ad_layers: list, compress_images,
+def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backbone: str, ad_layers: list,
+                    compress_images,
                     quality, feature_compression_method, sampling_ratio, pq_subspaces, save_path: str,
                     device: torch.device, max_dataset_size: int = None, quantize_mb: bool = False):
-    
     # initialize the feature extractor, compressor and quantizer
     feature_extractor = CustomFeatureExtractor(backbone, ad_layers, device, True, False, None)
     feature_quantizer = ProductQuantizer(subspaces=pq_subspaces)
+
+    import torch.nn as nn
+    with torch.no_grad():
+        input_dummy = torch.randn((1, 3, 224, 224))
+        features_dummy = feature_extractor(input_dummy.to(device))
+
+    autoencoders = nn.ModuleList()
+    for layer_features in features_dummy:
+        autoencoder = FeatureAutoencoder(in_channels=layer_features.shape[1], compression_ratio=0.5)
+        autoencoders.append(autoencoder)
+
+    optimizers = [torch.optim.Adam(ae.parameters(), lr=1e-3) for ae in autoencoders]
+
     compressor = CustomFeatureCompressor(device, feature_compression_method=feature_compression_method,
-                                         quality=quality, compression_ratio=sampling_ratio, quantizer=feature_quantizer)
+                                         quality=quality, compression_ratio=sampling_ratio, quantizer=None,
+                                         autoencoders=autoencoders)
 
     for category in categories:
 
@@ -65,13 +81,13 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
         # define training dataset
         if dataset_type == "mvtec":
             train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train", compressor=compressor,
-                                        apply_compression=compress_images, quality=quality)
+                                         apply_compression=compress_images, quality=quality)
         elif dataset_type == "visa":
             train_dataset = VisaDataset(dataset_path, csv_path=os.path.join(dataset_path, "split_csv", "1cls.csv"),
-                                       split=Split.TRAIN, class_name=category)
-        
+                                        split=Split.TRAIN, class_name=category)
+
         train_dataset.load_dataset()
-    
+
         if max_dataset_size is not None:
             train_dataset = torch.utils.data.Subset(train_dataset, range(max_dataset_size))
 
@@ -79,23 +95,33 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
             if "pq" in feature_compression_method:
                 feature_vectors = compressor.collect_feature_vectors(train_dataset, feature_extractor)
                 compressor.fit_quantizers(feature_vectors)
+            if "ae" in feature_compression_method:
+                train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
+                compressor.train_autoencoders(
+                    train_dataloader=train_dataloader,
+                    feature_extractor=feature_extractor,
+                    optimizers=optimizers,
+                    device=device,
+                    epochs=10,
+                    noise_std=0.001,
+                )
 
             train_dataset = CompressedFeaturesDataset(feature_extractor, train_dataset, compressor, device)
             train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True,
                                                            collate_fn=train_dataset.collate_fn)
-            
+
         else:
             train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True)
         print(f"Length train dataset: {len(train_dataset)}")
-        
-        #define test dataset
+
+        # define test dataset
         if dataset_type == "mvtec":
             test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test", compressor=compressor,
                                         apply_compression=compress_images, quality=quality)
         elif dataset_type == "visa":
             test_dataset = VisaDataset(dataset_path, csv_path=os.path.join(dataset_path, "split_csv", "1cls.csv"),
                                        split=Split.TEST, class_name=category)
-            
+
         test_dataset.load_dataset()
 
         if max_dataset_size is not None:
@@ -105,11 +131,18 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
             if "pq" in feature_compression_method:
                 feature_vectors = compressor.collect_feature_vectors(test_dataset, feature_extractor)
                 compressor.fit_quantizers(feature_vectors)
+            if "ae" in feature_compression_method:
+                test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True)
+                compressor.test_reconstruction(  # Only to check overfitting, in real cases test is likely not feasible
+                    test_dataloader=test_dataloader,
+                    feature_extractor=feature_extractor,
+                    device=device,
+                )
 
             test_dataset = CompressedFeaturesDataset(feature_extractor, test_dataset, compressor, device, split="test")
             test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True,
                                                           collate_fn=test_dataset.collate_fn)
-            
+
         else:
             test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
         print(f"Length test dataset: {len(test_dataset)}")
@@ -125,7 +158,12 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
 
         # save the model
         if save_path:
-            patchcore.save_model(save_path)
+            save_path_category = os.path.join(save_path, "patchcore", category)
+            os.makedirs(save_path_category, exist_ok=True)
+            full_path = os.path.join(save_path_category,
+                                     f"{backbone}_compress_images_{compress_images}_feature_compression_{feature_compression_method}_sampling_{sampling_ratio}.pt")
+
+            patchcore.save_model(full_path)
 
         sizes, total_size = patchcore.get_model_size_and_macs()
 
@@ -137,20 +175,19 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
         # save results to csv
         csv_path = "quantized_patchcore_visa.csv"
 
-        row = {"category": category,
-               "ad_layers": encode_ad_layers(ad_layers),
-               "quantize_mb": quantize_mb,
-               "img_roc": results["img_roc"],
-               "pxl_roc": results["pxl_roc"],
-               "f1_img": results["f1_img"],
-               "f1_pxl": results["f1_pxl"],
-               "img_pr": results["img_pr"],
-               "pxl_pr": results["pxl_pr"],
-               "pxl_pro": results["pxl_pro"],
-               "memory_bank_size_MB": sizes["memory_bank"]["size"],}
-        
-        #append_results_to_csv(csv_path, row)
+        # row = {"category": category,
+        #        "ad_layers": encode_ad_layers(ad_layers),
+        #        "quantize_mb": quantize_mb,
+        #        "img_roc": results["img_roc"],
+        #        "pxl_roc": results["pxl_roc"],
+        #        "f1_img": results["f1_img"],
+        #        "f1_pxl": results["f1_pxl"],
+        #        "img_pr": results["img_pr"],
+        #        "pxl_pr": results["pxl_pr"],
+        #        "pxl_pro": results["pxl_pro"],
+        #        "memory_bank_size_MB": sizes["memory_bank"]["size"], }
 
+        # append_results_to_csv(csv_path, row)
 
         # force garbage collector in case
         del patchcore
@@ -162,10 +199,10 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
         gc.collect()
 
 
-def test_patchcore(dataset_type: str, dataset_path: str, categories: str, backbone: str, ad_layers: list, model_checkpoint_path, compress_images,
-                    quality, visual_test_path, feature_compression_method, sampling_ratio, pq_subspaces,
-                    device: torch.device, max_dataset_size: int = None, quantize_mb: bool = False):
-
+def test_patchcore(dataset_type: str, dataset_path: str, categories: str, backbone: str, ad_layers: list,
+                   model_checkpoint_path, compress_images,
+                   quality, visual_test_path, feature_compression_method, sampling_ratio, pq_subspaces,
+                   device: torch.device, max_dataset_size: int = None, quantize_mb: bool = False):
     feature_extractor = CustomFeatureExtractor(backbone, ad_layers, device, True, False, None)
     feature_quantizer = ProductQuantizer(subspaces=pq_subspaces)
     compressor = CustomFeatureCompressor(device, feature_compression_method=feature_compression_method,
@@ -174,7 +211,7 @@ def test_patchcore(dataset_type: str, dataset_path: str, categories: str, backbo
     for category in categories:
         if dataset_type == "mvtec":
             test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test", compressor=compressor,
-                                    apply_compression=compress_images, quality=quality)
+                                        apply_compression=compress_images, quality=quality)
         elif dataset_type == "visa":
             test_dataset = VisaDataset(dataset_path, csv_path=os.path.join(dataset_path, "split_csv", "1cls.csv"),
                                        split=Split.TEST, class_name=category)
@@ -230,7 +267,8 @@ def test_patchcore(dataset_type: str, dataset_path: str, categories: str, backbo
                 anomaly_maps = torch.permute(anomaly_maps, (0, 2, 3, 1))
 
                 for i in range(anomaly_maps.shape[0]):
-                    patchcore.save_anomaly_map(visual_test_path, anomaly_maps[i].cpu().numpy(), pred_scores[i], paths[i],
+                    patchcore.save_anomaly_map(visual_test_path, anomaly_maps[i].cpu().numpy(), pred_scores[i],
+                                               paths[i],
                                                labels[i], masks[i])
 
 
@@ -248,12 +286,16 @@ def main():
     parser.add_argument("--ad_layers", type=str, nargs="+", help="List of ad layers")
     parser.add_argument("--compress_images", action="store_true", help="Compress images using JPEG or WEBP")
     parser.add_argument("--quality", type=int, default=50, help="Compression quality of images")
-    parser.add_argument("--feature_compression_method", type=str, default=None, nargs="+", help="Method for feature compression")
-    parser.add_argument("--sampling_ratio", type=float, default=0.25, help="Sampling ratio for random projection of features")
+    parser.add_argument("--feature_compression_method", type=str, default=None, nargs="+",
+                        help="Method for feature compression")
+    parser.add_argument("--sampling_ratio", type=float, default=0.25,
+                        help="Sampling ratio for random projection of features")
     parser.add_argument("--pq_subspaces", type=int, default=None, help="PQ subspaces to use")
-    parser.add_argument("--quantize_mb", action="store_true", help="Whether to quantize the memory bank to reduce its size")
+    parser.add_argument("--quantize_mb", action="store_true",
+                        help="Whether to quantize the memory bank to reduce its size")
     parser.add_argument("--save_path", type=str, default=None, help="Path of the .pt file where to save the model")
-    parser.add_argument("--visual_test_path", type=str, default=None, help="Path of the directory where to save the visual paths")
+    parser.add_argument("--visual_test_path", type=str, default=None,
+                        help="Path of the directory where to save the visual paths")
     parser.add_argument("--device", type=str, help="Where to run the script")
     parser.add_argument("--seed", type=int, default=1, help="Execution seed")
 
@@ -265,12 +307,13 @@ def main():
 
     if args.mode == "train":
         train_patchcore(args.dataset_type, args.dataset_path, args.categories, args.backbone, args.ad_layers,
-                        args.compress_images, args.quality, args.feature_compression_method, args.sampling_ratio, 
-                        args.pq_subspaces, args.save_path, device, quantize_mb = args.quantize_mb)
+                        args.compress_images, args.quality, args.feature_compression_method, args.sampling_ratio,
+                        args.pq_subspaces, args.save_path, device, quantize_mb=args.quantize_mb)
     elif args.mode == "test":
-        test_patchcore(args.dataset_type, args.dataset_path, args.categories, args.backbone, args.ad_layers, args.save_path, args.compress_images,
+        test_patchcore(args.dataset_type, args.dataset_path, args.categories, args.backbone, args.ad_layers,
+                       args.save_path, args.compress_images,
                        args.quality, args.visual_test_path, args.feature_compression_method,
-                       args.sampling_ratio, args.pq_subspaces, device, quantize_mb = args.quantize_mb)
+                       args.sampling_ratio, args.pq_subspaces, device, quantize_mb=args.quantize_mb)
 
 
 if __name__ == "__main__":

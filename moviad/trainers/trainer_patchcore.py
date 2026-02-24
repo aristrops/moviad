@@ -63,19 +63,19 @@ class TrainerPatchCore(Trainer):
                 self.logger.watch(self.model)
             print("Embedding Extraction:")
             for batch in tqdm(iter(self.train_dataloader)):
-                if isinstance(batch, (tuple, list)):
-                    inputs = batch[0]
-                else:
-                    inputs = batch
-
-                inputs = inputs.to(self.device)
-
-                embedding = self.patchore_model(inputs)
-                # if isinstance(batch, list):
-                #     batch = [b.to(self.device) for b in batch]
-                #     embedding = self.patchore_model(batch)
+                # if isinstance(batch, (tuple, list)):
+                #     inputs = batch[0]
                 # else:
-                #     embedding = self.model(batch.to(self.device))
+                #     inputs = batch
+                #
+                # inputs = inputs.to(self.device)
+                #
+                # embedding = self.patchore_model(inputs)
+                if isinstance(batch, list):
+                    batch = [b.to(self.device) for b in batch]
+                    embedding = self.patchore_model(batch)
+                else:
+                    embedding = self.model(batch.to(self.device))
 
                 #print(f"Embedding Shape: {embedding.shape}")
 
@@ -117,7 +117,7 @@ class TrainerPatchCore(Trainer):
             self.evaluator.device = self.device
 
             if self.evaluate:
-                results = self.evaluator.evaluate_vad_space(self.model)
+                results = self.evaluator.evaluate(self.model)
 
                 # results = {
                 #         "img_roc": img_roc,
