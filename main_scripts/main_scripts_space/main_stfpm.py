@@ -65,12 +65,18 @@ def main(args):
             train_dataset = MarsDataset(root_dir="vad_space_datasets/mars", split="train",
                                         transform=mars_transform)
 
+        elif dataset_type == "lunar":
+            train_dataset = LunarDataset(root_dir="vad_space_datasets/lunar", split="train", transform=None)
+
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=8, shuffle=True)
         print(f"Length train dataset: {len(train_dataset)}")
 
         if dataset_type == "mars":
             test_dataset = MarsDataset(root_dir="vad_space_datasets/mars", split="test",
                                        transform=mars_transform)
+
+        elif dataset_type == "lunar":
+            test_dataset = LunarDataset(root_dir="vad_space_datasets/lunar", split="test", transform=None)
 
         test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
         print(f"Length test dataset: {len(test_dataset)}")
