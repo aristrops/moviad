@@ -256,13 +256,29 @@ class Stfpm(nn.Module):
             state_dict[p] = getattr(self, p)
         return state_dict
 
+    # def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True):
+    #     # load the hyperparameters
+    #     for p in self.HYPERPARAMS:
+    #         setattr(self, p, state_dict[p])
+    #     # load the backbone models
+    #     self.__define_backbones__()
+    #     return super().load_state_dict(state_dict, strict=strict)
     def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True):
-        # load the hyperparameters
+        # 1️⃣ Extract hyperparameters
         for p in self.HYPERPARAMS:
-            setattr(self, p, state_dict[p])
-        # load the backbone models
+            if p in state_dict:
+                setattr(self, p, state_dict[p])
+
+        # 2️⃣ Rebuild backbones using loaded hyperparams
         self.__define_backbones__()
-        return super().load_state_dict(state_dict, strict=strict)
+
+        # 3️⃣ Remove hyperparams from state_dict before calling super()
+        clean_state_dict = {
+            k: v for k, v in state_dict.items()
+            if k not in self.HYPERPARAMS
+        }
+
+        return super().load_state_dict(clean_state_dict, strict=strict)
 
     @staticmethod
     def __layers_to_idxs__(layers, model=None):

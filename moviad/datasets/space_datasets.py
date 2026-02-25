@@ -53,7 +53,7 @@ def compute_mean_std(dataset):
 
 
 class MarsDataset(Dataset):
-    def __init__(self, root_dir, split="all", transform=None, test_positive_ratio=None):
+    def __init__(self, root_dir, split="all", transform=None, test_positive_ratio=None, contamination_ratio = None):
         self.samples = []
         self.transform = None
 
@@ -104,6 +104,26 @@ class MarsDataset(Dataset):
 
             print(f"Test set balanced to {test_positive_ratio * 100:.1f}% positives")
 
+        if split == "train" and contamination_ratio is not None:
+            novel_folder = root / "test_novel"
+
+            novel_samples = []
+            for f in novel_folder.rglob("*.npy"):
+                novel_samples.append((str(f), 1))
+
+            N = len(self.samples)
+            k = int(contamination_ratio * N / (1 - contamination_ratio))
+
+            contam = random.sample(novel_samples, min(k, len(novel_samples)))
+
+            self.samples.extend(contam)
+            random.shuffle(self.samples)
+
+            total = len(self.samples)
+            actual_ratio = (total - N) / total
+
+            print(f"Contamination = {actual_ratio:.4f} ({total - N}/{total})")
+
     def __len__(self):
         return len(self.samples)
 
@@ -126,7 +146,7 @@ class MarsDataset(Dataset):
 
 
 class LunarDataset(Dataset):
-    def __init__(self, root_dir=None, split="all", transform=None, test_positive_ratio=None):
+    def __init__(self, root_dir=None, split="all", transform=None, test_positive_ratio=None, contamination_ratio=None):
         self.samples = []
         self.transform = None
 
@@ -192,6 +212,33 @@ class LunarDataset(Dataset):
             random.shuffle(self.samples)
 
             print(f"Test set balanced to {test_positive_ratio * 100:.1f}% positives")
+
+        if split == "train" and contamination_ratio is not None:
+            contam_folders = [
+                (root / "test/oldcrater", 1),
+                (root / "test/ejecta", 1),
+            ]
+
+            contam_samples = []
+            for folder, _ in contam_folders:
+                if not folder.exists():
+                    continue
+
+                for f in folder.rglob("*.jpg"):
+                    contam_samples.append((str(f), 1))
+
+            N = len(self.samples)
+            k = int(contamination_ratio * N / (1 - contamination_ratio))
+
+            contam_samples = random.sample(contam_samples, min(k, len(contam_samples)))
+
+            self.samples.extend(contam_samples)
+            random.shuffle(self.samples)
+
+            total = len(self.samples)
+            actual_ratio = (total - N) / total
+
+            print(f"Contamination = {actual_ratio:.4f} ({total - N}/{total})")
 
     def __len__(self):
         return len(self.samples)

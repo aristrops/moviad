@@ -403,8 +403,8 @@ class PatchCore(nn.Module):
         ----------
             output_path (str): where the model will be saved
         """
-        os.makedirs(output_path, exist_ok=True)
-        
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
         model_state_dict = self.state_dict()
         torch.save(model_state_dict, output_path)
         print("Model saved to " + output_path)

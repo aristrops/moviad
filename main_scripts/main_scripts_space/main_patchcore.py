@@ -46,33 +46,33 @@ def append_results_to_csv(csv_path: str, row: dict):
 
 
 def train_patchcore(dataset_type: str, backbone: str, ad_layers: list, save_path: str,
-                    device: torch.device):
-    # initialize the feature extractor, compressor and quantizer
+                    device: torch.device, contamination_ratio: float, test_positive_ratio: float):
+
     feature_extractor = CustomFeatureExtractor(backbone, ad_layers, device, True, False, None)
 
     print(f"Training Pathcore for {dataset_type} dataset...\n")
 
     #define training dataset
     if dataset_type == "mars":
-        mars_mean, mars_std = compute_mean_std(MarsDataset(root_dir=r"C:\Users\arist\Downloads\3659202", split="train", transform=None))
+        mars_mean, mars_std = compute_mean_std(MarsDataset(root_dir=r"vad_space_datasets/mars", split="train", transform=None))
         mars_transform = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.Normalize(mean=mars_mean.tolist(), std=mars_std.tolist()),
         ])
 
-        train_dataset = MarsDataset(root_dir=r"C:\Users\arist\Downloads\3659202", split="train", transform=mars_transform)
+        train_dataset = MarsDataset(root_dir=r"vad_space_datasets/mars", split="train", transform=mars_transform, contamination_ratio=contamination_ratio)
 
     elif dataset_type == "lunar":
-        train_dataset = LunarDataset(root_dir="vad_space_datasets/lunar", split="train", transform=None)
+        train_dataset = LunarDataset(root_dir="vad_space_datasets/lunar", split="train", transform=None, contamination_ratio=contamination_ratio)
 
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=8, shuffle=True)
     print(f"Length train dataset: {len(train_dataset)}")
 
     # define test dataset
     if dataset_type == "mars":
-        test_dataset = MarsDataset(root_dir=r"C:\Users\arist\Downloads\3659202", split="test", transform=mars_transform)
+        test_dataset = MarsDataset(root_dir=r"vad_space_datasets/mars", split="test", transform=mars_transform, test_positive_ratio=test_positive_ratio)
     elif dataset_type == "lunar":
-        test_dataset = LunarDataset(root_dir="vad_space_datasets/lunar", split="test", transform=None)
+        test_dataset = LunarDataset(root_dir="vad_space_datasets/lunar", split="test", transform=None, test_positive_ratio=test_positive_ratio)
 
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
     print(f"Length test dataset: {len(test_dataset)}")
@@ -90,28 +90,6 @@ def train_patchcore(dataset_type: str, backbone: str, ad_layers: list, save_path
     if save_path:
         patchcore.save_model(save_path)
 
-    sizes, total_size = patchcore.get_model_size_and_macs()
-
-    print(f"Size of the memory bank: {sizes['memory_bank']['size']: .2f} MB")
-    print(f"Size of the feature extractor: {sizes['feature_extractor']['size']: .2f} MB")
-    print(f"Parameters of the feature extractor: {sizes["feature_extractor"]["params"]}")
-    print(f"Total model size: {total_size: .2f} MB")
-
-    # save results to csv
-    csv_path = "quantized_patchcore_visa.csv"
-
-    row = {"ad_layers": encode_ad_layers(ad_layers),
-           "img_roc": results["img_roc"],
-           "pxl_roc": results["pxl_roc"],
-           "f1_img": results["f1_img"],
-           "f1_pxl": results["f1_pxl"],
-           "img_pr": results["img_pr"],
-           "pxl_pr": results["pxl_pr"],
-           "pxl_pro": results["pxl_pro"],
-           "memory_bank_size_MB": sizes["memory_bank"]["size"], }
-
-    # append_results_to_csv(csv_path, row)
-
     # force garbage collector in case
     del patchcore
     del test_dataset
@@ -122,77 +100,48 @@ def train_patchcore(dataset_type: str, backbone: str, ad_layers: list, save_path
     gc.collect()
 
 
-def test_patchcore(dataset_type: str, dataset_path: str, categories: str, backbone: str, ad_layers: list,
-                   model_checkpoint_path, compress_images,
-                   quality, visual_test_path, feature_compression_method, sampling_ratio, pq_subspaces,
-                   device: torch.device, max_dataset_size: int = None, quantize_mb: bool = False):
+def test_patchcore(dataset_type: str, backbone: str, ad_layers: list, model_checkpoint_path,
+                   device: torch.device, test_positive_ratio: float):
+
+    print(f"Testing Pathcore for {dataset_type} dataset...\n")
+
     feature_extractor = CustomFeatureExtractor(backbone, ad_layers, device, True, False, None)
-    feature_quantizer = ProductQuantizer(subspaces=pq_subspaces)
-    compressor = CustomFeatureCompressor(device, feature_compression_method=feature_compression_method,
-                                         quality=quality, compression_ratio=sampling_ratio, quantizer=feature_quantizer)
 
-    for category in categories:
-        if dataset_type == "mvtec":
-            test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test", compressor=compressor,
-                                        apply_compression=compress_images, quality=quality)
-        elif dataset_type == "visa":
-            test_dataset = VisaDataset(dataset_path, csv_path=os.path.join(dataset_path, "split_csv", "1cls.csv"),
-                                       split=Split.TEST, class_name=category)
+    if dataset_type == "mars":
+        mars_mean, mars_std = compute_mean_std(MarsDataset(root_dir=r"vad_space_datasets/mars", split="train", transform=None))
+        mars_transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.Normalize(mean=mars_mean.tolist(), std=mars_std.tolist()),
+        ])
+        test_dataset = MarsDataset(root_dir=r"vad_space_datasets/mars", split="test", transform=mars_transform,
+                                   test_positive_ratio=test_positive_ratio)
+    elif dataset_type == "lunar":
+        test_dataset = LunarDataset(root_dir="vad_space_datasets/lunar", split="test", transform=None,
+                                    test_positive_ratio=test_positive_ratio)
 
-        test_dataset.load_dataset()
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
+    print(f"Length test dataset: {len(test_dataset)}")
 
-        if max_dataset_size is not None:
-            test_dataset = torch.utils.data.Subset(test_dataset, range(max_dataset_size))
+    # load the model
+    patchcore = PatchCore(device, input_size=(224, 224), feature_extractor=feature_extractor,
+                          compression_method=None, apply_quantization=False)
+    patchcore.load_model(model_checkpoint_path)
+    patchcore.to(device)
+    patchcore.eval()
 
-        if feature_compression_method is not None:
-            if "pq" in feature_compression_method:
-                feature_vectors = compressor.collect_feature_vectors(test_dataset, feature_extractor)
-                compressor.fit_quantizers(feature_vectors)
+    evaluator = Evaluator(test_dataloader, device)
+    results = evaluator.evaluate_vad_space(patchcore)
 
-            test_dataset = CompressedFeaturesDataset(feature_extractor, test_dataset, compressor, device, split="test")
-            test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True,
-                                                          collate_fn=test_dataset.collaimte_fn)
-        else:
-            test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True)
-        print(f"Length test dataset: {len(test_dataset)}")
-
-        # load the model
-        patchcore = PatchCore(device, input_size=(224, 224), feature_extractor=feature_extractor,
-                              compression_method=feature_compression_method, apply_quantization=quantize_mb)
-        patchcore.load_model(model_checkpoint_path)
-        patchcore.to(device)
-        patchcore.eval()
-
-        evaluator = Evaluator(test_dataloader, device)
-        img_roc, pxl_roc, f1_img, f1_pxl, img_pr, pxl_pr, pxl_pro = evaluator.evaluate(patchcore)
-
-        print("Evaluation performances:")
-        print(f"""
-        img_roc: {img_roc}
-        pxl_roc: {pxl_roc}
-        f1_img: {f1_img}
-        f1_pxl: {f1_pxl}
-        img_pr: {img_pr}
-        pxl_pr: {pxl_pr}
-        pxl_pro: {pxl_pro}
+    print("Evaluation performances:")
+    print(f"""
+            img_roc: {results["img_roc_auc"]} \n
+            pxl_roc: {results["pxl_roc_auc"]} \n
+            f1_img: {results["img_f1"]} \n
+            f1_pxl: {results["pxl_f1"]} \n
+            img_pr: {results["img_pr_auc"]} \n
+            pxl_pr: {results["pxl_pr_auc"]} \n
+            pxl_pro: {results["pxl_au_pro"]} \n
         """)
-
-        # check for the visual test
-        if visual_test_path:
-
-            # Get output directory.
-            dirpath = pathlib.Path(visual_test_path)
-            dirpath.mkdir(parents=True, exist_ok=True)
-
-            for images, labels, masks, paths in tqdm(iter(test_dataloader)):
-                anomaly_maps, pred_scores = patchcore(images.to(device))
-
-                anomaly_maps = torch.permute(anomaly_maps, (0, 2, 3, 1))
-
-                for i in range(anomaly_maps.shape[0]):
-                    patchcore.save_anomaly_map(visual_test_path, anomaly_maps[i].cpu().numpy(), pred_scores[i],
-                                               paths[i],
-                                               labels[i], masks[i])
 
 
 def main():
@@ -210,6 +159,8 @@ def main():
                         help="Path of the directory where to save the visual paths")
     parser.add_argument("--device", type=str, help="Where to run the script")
     parser.add_argument("--seed", type=int, default=1, help="Execution seed")
+    parser.add_argument("--contamination", type=float, default=None, help="Contamination ratio")
+    parser.add_argument("--test_positive_ratio", type=float, default=None, help="Positive ratio")
 
     args = parser.parse_args()
 
@@ -218,12 +169,9 @@ def main():
     device = torch.device(args.device)
 
     if args.mode == "train":
-        train_patchcore(args.dataset_type, args.backbone, args.ad_layers, args.save_path, device)
+        train_patchcore(args.dataset_type, args.backbone, args.ad_layers, args.save_path, device, args.contamination,args.test_positive_ratio)
     elif args.mode == "test":
-        test_patchcore(args.dataset_type, args.dataset_path, args.categories, args.backbone, args.ad_layers,
-                       args.save_path, args.compress_images,
-                       args.quality, args.visual_test_path, args.feature_compression_method,
-                       args.sampling_ratio, args.pq_subspaces, device, quantize_mb=args.quantize_mb)
+        test_patchcore(args.dataset_type, args.backbone, args.ad_layers, args.save_path, device, args.test_positive_ratio)
 
 
 if __name__ == "__main__":
