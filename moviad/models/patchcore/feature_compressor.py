@@ -27,7 +27,7 @@ class CustomFeatureCompressor():
         self.img_size = img_size
 
         # One autoencoder per layer
-        self.autoencoders = autoencoders.to(device)
+        self.autoencoders = autoencoders.to(device) if autoencoders is not None else None
 
         self.trained_quantizer = None
         self.sampled_indices_cache = {}

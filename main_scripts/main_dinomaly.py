@@ -89,11 +89,6 @@ def train(item):
 
     compressor = CustomFeatureCompressor(device, quality=args.quality, img_size=image_size, feature_compression_method=None, compression_ratio=1)
 
-    data_transform, gt_transform = get_data_transforms(image_size, crop_size)
-
-    train_path = os.path.join(args.data_path, item, 'train')
-    test_path = os.path.join(args.data_path, item)
-
     train_data = MVTecDataset(TaskType.SEGMENTATION, args.data_path, item, "train", compressor, args.compress_images, args.quality, img_size=image_size)
     train_data.load_dataset()
     print(f"Length of training data: {len(train_data)}")
@@ -105,7 +100,7 @@ def train(item):
                                                    drop_last=True)
     test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=0)
 
-    encoder_name = 'dinov2reg_vit_small_14'
+    encoder_name = 'deit_small_16'
     #encoder_name = 'dinov2reg_vit_base_14'
     # encoder_name = 'dinov2reg_vit_large_14'
 
