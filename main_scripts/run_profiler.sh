@@ -119,5 +119,4 @@ for CATEGORY in "${CATEGORIES[@]}"; do
       done
     done
   done
-done
 
