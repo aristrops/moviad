@@ -91,8 +91,11 @@ class CustomFeatureCompressor():
 
         # autoencoders
         if "ae" in self.feature_compression_method:
-            latent_features = self.autoencoders_compress(features)
-            features = self.autoencoders_decompress(latent_features)
+            with torch.no_grad():
+                latent_features = self.autoencoders_compress(features)
+                features = self.autoencoders_decompress(latent_features)
+
+            features = [f.detach() for f in features]
         
         return features, total_size
     
@@ -246,7 +249,7 @@ class CustomFeatureCompressor():
     #--------AUTOENCODERS--------
 
     def train_autoencoders(self, train_dataloader, feature_extractor, optimizers, device, epochs: int = 10, noise_std: int | None = None) -> float:
-        feature_extractor.model.eval()
+        #feature_extractor.model.eval()
         
         import tqdm
         for idx, (ae, optimizer) in enumerate(zip(self.autoencoders, optimizers)):
@@ -287,7 +290,7 @@ class CustomFeatureCompressor():
 
     def test_reconstruction(self, test_dataloader, feature_extractor, device) -> dict:
         self.autoencoders.eval()
-        feature_extractor.model.eval()
+        #feature_extractor.model.eval()
         
         num_aes = len(self.autoencoders)
         total_losses = [0.0] * num_aes
