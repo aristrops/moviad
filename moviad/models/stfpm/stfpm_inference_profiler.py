@@ -230,74 +230,96 @@ def main(args):
             dynamic_profile(model=stfpm, dataloader=test_dataloader, device=device, num_batches=1000)
 
 
+# if __name__ == "__main__":
+#     import argparse
+#
+#     categories = [
+#         "hazelnut",  # at the top because very large in memory, so we can check if it crashes
+#         "bottle",
+#         "cable",
+#         "capsule",
+#         "carpet",
+#         "grid",
+#         "leather",
+#         "metal_nut",
+#         "pill",
+#         "screw",
+#         "tile",
+#         "toothbrush",
+#         "transistor",
+#         "wood",
+#         "zipper",
+#     ]
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument("--train", action="store_true")
+#     parser.add_argument("--test", action="store_true")
+#     parser.add_argument("--debug", action="store_true")
+#     #parser.add_argument("--save_figures", action="store_true")
+#     parser.add_argument("--save_logs", action="store_true")
+#     parser.add_argument(
+#         "--backbone_model_name",
+#         type=str,
+#         help="resnet18, wide_resnet50_2, mobilenet_v2, mcunet-in3",
+#     )
+#     parser.add_argument(
+#         "--student_bootstrap_layer",
+#         default = None,
+#         help="the layer idx to bootstrap the student model"
+#     )
+#     parser.add_argument(
+#         "--img_input_size",
+#         type=int,
+#         default=(224, 224),
+#         help="input image size, if None, default is used",
+#     )
+#     #parser.add_argument(
+#     #    "--output_size",
+#     #    type=int,
+#     #    default=(224, 224),
+#     #    help="output image size, if None, default is used",
+#     #)
+#     parser.add_argument("--batch_size", type=int, default=32)
+#     parser.add_argument(
+#         "--save_path", type=str, default=None, help="where to save the model checkpoint"
+#     )
+#     parser.add_argument("--data_path", type=str, default="../../datasets/mvtec/")
+#     parser.add_argument("--device", type=str, default="cuda:1")
+#     #parser.add_argument("--results_dirpath", type=str, default=None)
+#     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
+#     parser.add_argument("--categories", type=str, nargs="+", default=categories)
+#     parser.add_argument(
+#         "--ad_layers_idxs",
+#         type=str,
+#         nargs="+",
+#         required = True,
+#         help="list of layers idxs to use for feature extraction",
+#     )
+#
+#     args = parser.parse_args()
+#
+#     log_filename = "stfpm.log"
+#     s = "DEBUG " if args.debug else ""
+#
+#     main(args)
+
 if __name__ == "__main__":
-    import argparse
+    # Instead of argparse, create a simple class to hold arguments
+    class Args:
+        train = False
+        test = True
+        debug = True
+        save_logs = False
+        backbone_model_name = "wide_resnet50_2"
+        student_bootstrap_layer = None
+        img_input_size = (224, 224)
+        batch_size = 32
+        save_path = r"C:\Users\arist\Desktop\Work\moviad_new\outputs\wide_resnet50_2_100ep_IMAGENET1K_V2_1_2_3_s0.pth.tar"
+        data_path = r"C:\Users\arist\Desktop\Work\CONVAD\MvTec_Dataset"
+        device = "cpu"
+        seeds = [0, 1, 2]
+        categories = ["pill"
+        ]
+        ad_layers_idxs = [1, 2, 3]  # example layer indices
 
-    categories = [
-        "hazelnut",  # at the top because very large in memory, so we can check if it crashes
-        "bottle",
-        "cable",
-        "capsule",
-        "carpet",
-        "grid",
-        "leather",
-        "metal_nut",
-        "pill",
-        "screw",
-        "tile",
-        "toothbrush",
-        "transistor",
-        "wood",
-        "zipper",
-    ]
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--train", action="store_true")
-    parser.add_argument("--test", action="store_true")
-    parser.add_argument("--debug", action="store_true")
-    #parser.add_argument("--save_figures", action="store_true")
-    parser.add_argument("--save_logs", action="store_true")
-    parser.add_argument(
-        "--backbone_model_name",
-        type=str,
-        help="resnet18, wide_resnet50_2, mobilenet_v2, mcunet-in3",
-    )
-    parser.add_argument(
-        "--student_bootstrap_layer",
-        default = None,
-        help="the layer idx to bootstrap the student model"
-    )
-    parser.add_argument(
-        "--img_input_size",
-        type=int,
-        default=(224, 224),
-        help="input image size, if None, default is used",
-    )
-    #parser.add_argument(
-    #    "--output_size",
-    #    type=int,
-    #    default=(224, 224),
-    #    help="output image size, if None, default is used",
-    #)
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument(
-        "--save_path", type=str, default=None, help="where to save the model checkpoint"
-    )
-    parser.add_argument("--data_path", type=str, default="../../datasets/mvtec/")
-    parser.add_argument("--device", type=str, default="cuda:1")
-    #parser.add_argument("--results_dirpath", type=str, default=None)
-    parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
-    parser.add_argument("--categories", type=str, nargs="+", default=categories)
-    parser.add_argument(
-        "--ad_layers_idxs",
-        type=str,
-        nargs="+",
-        required = True,
-        help="list of layers idxs to use for feature extraction",
-    )
-
-    args = parser.parse_args()
-
-    log_filename = "stfpm.log"
-    s = "DEBUG " if args.debug else ""
-
+    args = Args()
     main(args)

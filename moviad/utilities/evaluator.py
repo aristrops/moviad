@@ -103,19 +103,85 @@ class Evaluator:
 
         # TODO: Implement Add False-alarm rate
 
-        # metrics = {
-        #     "img_roc_auc": img_roc_auc,
-        #     "pxl_roc_auc": pxl_roc_auc,
-        #     "img_f1": img_f1,
-        #     "pxl_f1": pxl_f1,
-        #     "img_pr_auc": img_pr_auc,
-        #     "pxl_pr_auc": pxl_pr_auc,
-        #     "pxl_au_pro": pxl_au_pro
-        # }
+        metrics = {
+            "img_roc_auc": img_roc_auc,
+            "pxl_roc_auc": pxl_roc_auc,
+            "img_f1": img_f1,
+            "pxl_f1": pxl_f1,
+            "img_pr_auc": img_pr_auc,
+            "pxl_pr_auc": pxl_pr_auc,
+            "pxl_au_pro": pxl_au_pro
+        }
 
-        return img_roc_auc, pxl_roc_auc, img_f1, pxl_f1, img_pr_auc, pxl_pr_auc, pxl_au_pro
+        return metrics
 
-           
+
+    def evaluate_vad_space(self, model):
+        """
+        Args:
+            model: a model object on which you can call model.predict(batched_images)
+                and returns a tuple of anomaly_maps and anomaly_scores
+            output_path (str): path where to store the output masks
+        """
+
+        model.eval()
+
+        # Initialize results.
+        _, true_img_scores = (list(), list())
+        _, pred_img_scores = (list(), list())
+
+        for images, labels in tqdm(self.test_dataloader, desc="Eval"):
+            # get anomaly map and score
+            with torch.no_grad():
+                anomaly_maps, anomaly_scores = model(images.to(self.device))
+
+            # add true masks and img anomaly scores
+            true_img_scores.extend(labels.cpu().numpy())
+
+            # add predicted masks and img anomaly scores (check for numpy arrays or tensors)
+            if isinstance(anomaly_maps, torch.Tensor):
+                pred_img_scores.extend(anomaly_scores.cpu().numpy())
+            else:
+                pred_img_scores.extend(anomaly_scores)
+
+        true_img_scores = np.asarray(true_img_scores)
+        pred_img_scores = np.asarray(pred_img_scores)
+
+        """Image-level AUROC"""
+        fpr, tpr, img_roc_auc = cal_img_roc(pred_img_scores, true_img_scores)
+
+        """Pixel-level AUROC"""
+        fpr, tpr, pxl_roc_auc = None, None, -1
+
+        """F1 Score Image-level"""
+        img_f1 = cal_f1_img(pred_img_scores, true_img_scores)
+
+        """F1 Score Pixel-level"""
+        pxl_f1 = -1
+
+        """Image-level PR-AUC"""
+        img_pr_auc = cal_pr_auc_img(pred_img_scores, true_img_scores)
+
+        """Pixel-level PR-AUC"""
+        pxl_pr_auc = -1
+
+        """Pixel-level AU-PRO"""
+        pxl_au_pro = -1
+
+        # TODO: Implement Add False-alarm rate
+
+        metrics = {
+            "img_roc_auc": img_roc_auc,
+            "pxl_roc_auc": pxl_roc_auc,
+            "img_f1": img_f1,
+            "pxl_f1": pxl_f1,
+            "img_pr_auc": img_pr_auc,
+            "pxl_pr_auc": pxl_pr_auc,
+            "pxl_au_pro": pxl_au_pro
+        }
+
+        return metrics
+
     def evaluate_single_images(self, model):
 
         model.eval()

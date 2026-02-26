@@ -403,15 +403,15 @@ class PatchCore(nn.Module):
         ----------
             output_path (str): where the model will be saved
         """
-        os.makedirs(output_path, exist_ok=True)
+        #os.makedirs(output_path, exist_ok=True)
         
         model_state_dict = self.state_dict()
-        torch.save(model_state_dict, output_path + "patchcore_pill_wideresnet_s1.pt")
-        print("Model saved to " + output_path + "patchcore_pill_wideresnet_s1.pt")
+        torch.save(model_state_dict, output_path)
+        print("Model saved to " + output_path)
         if self.apply_quantization:
             assert self.product_quantizer is not None
-            self.product_quantizer.save(output_path + "patchcore_pill_wideresnet_s1_pq.bin")
-            print("Product Quantizer saved to " + output_path + "patchcore_pill_wideresnet_s1_pq.bin")
+            self.product_quantizer.save(output_path)
+            print("Product Quantizer saved to " + output_path)
 
     def save_anomaly_map(self, dirpath, anomaly_map, pred_score, filepath, x_type, mask):
         """

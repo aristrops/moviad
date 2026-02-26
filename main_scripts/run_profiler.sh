@@ -66,7 +66,7 @@ SEEDS=(1)
 BATCH_SIZES=(1)
 REPEATS=3
 
-DATA_PATH="/mnt/disk1/borsattifr/datasets/mvtec"
+DATA_PATH=""
 
 # Layer names to extract features from (strings, not ints)
 AD_LAYERS=(4 7 10)

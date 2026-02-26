@@ -4,8 +4,8 @@ import io
 import math
 import numpy as np
 from PIL import Image
+import torch.nn.functional as F
 import torchvision.transforms.functional as TF
-
 
 class CustomFeatureCompressor():
     def __init__(
@@ -15,7 +15,8 @@ class CustomFeatureCompressor():
         quality: int,
         compression_ratio: int,
         quantizer = None,
-        img_size = (224, 224)
+        autoencoders = None,
+        img_size = (224, 224),
     ):
         
         self.device = device
@@ -24,6 +25,9 @@ class CustomFeatureCompressor():
         self.quality = quality
         self.compression_ratio = compression_ratio
         self.img_size = img_size
+
+        # One autoencoder per layer
+        self.autoencoders = autoencoders.to(device) if autoencoders is not None else None
 
         self.trained_quantizer = None
         self.sampled_indices_cache = {}
@@ -84,6 +88,14 @@ class CustomFeatureCompressor():
         if "pq" in self.feature_compression_method:
             encoded = self.product_quantization(features)
             features = self.decompress_features(encoded)
+
+        # autoencoders
+        if "ae" in self.feature_compression_method:
+            with torch.no_grad():
+                latent_features = self.autoencoders_compress(features)
+                features = self.autoencoders_decompress(latent_features)
+
+            features = [f.detach() for f in features]
         
         return features, total_size
     
@@ -232,5 +244,88 @@ class CustomFeatureCompressor():
             offset += num_elements
 
         return decoded_features
+    
+
+    #--------AUTOENCODERS--------
+
+    def train_autoencoders(self, train_dataloader, feature_extractor, optimizers, device, epochs: int = 10, noise_std: int | None = None) -> float:
+        #feature_extractor.model.eval()
         
+        import tqdm
+        for idx, (ae, optimizer) in enumerate(zip(self.autoencoders, optimizers)):
+            print(f"\nTraining autoencoder {idx+1}")
+            ae.train()
+            
+            epoch_progress = tqdm.tqdm(range(epochs), f"AE_{idx+1}")
+            for _ in epoch_progress:
+                total_loss = 0.0
+
+                for images in train_dataloader:
+                    images = images.to(device)
+
+                    with torch.no_grad():
+                        features = feature_extractor(images)
+                    
+                    layer_features = features[idx]
+                    
+                    if noise_std: # Noisy features for training robustness
+                        layer_features = layer_features + noise_std * torch.randn_like(layer_features)
+
+                    recon = ae(layer_features)
+
+                    loss = F.mse_loss(recon, layer_features)
+
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+                    total_loss += loss.item()
+
+                avg_loss = total_loss / len(train_dataloader)
+                epoch_progress.set_postfix({"avg_loss": f"{avg_loss:.6f}"})
+
+        self.autoencoders.eval()
+        return avg_loss
+    
+
+    def test_reconstruction(self, test_dataloader, feature_extractor, device) -> dict:
+        self.autoencoders.eval()
+        #feature_extractor.model.eval()
+        
+        num_aes = len(self.autoencoders)
+        total_losses = [0.0] * num_aes
+        
+        import torch
+        import tqdm
+
+        print("\nTesting autoencoders' reconstruction error...")
+        with torch.no_grad():
+            for images, _, _, _ in tqdm.tqdm(test_dataloader, desc="Eval"):
+                images = images.to(device)
+                features = feature_extractor(images)
+                
+                for i, ae in enumerate(self.autoencoders):
+                    layer_features = features[i]
+                    recon = ae(layer_features)
+                    
+                    loss = F.mse_loss(recon, layer_features)
+                    total_losses[i] += loss.item()
+
+        num_batches = len(test_dataloader)
+        avg_losses = {f"AE_{i+1}_loss": total / num_batches for i, total in enumerate(total_losses)}
+        avg_losses["total_mean_loss"] = sum(avg_losses.values()) / num_aes
+
+        print("\n--- Test Results ---")
+        for name, value in avg_losses.items():
+            print(f"{name}: {value:.6f}")
+            
+        return avg_losses
+
+
+    def autoencoders_compress(self, features: list) -> list:
+        return [self.autoencoders[i].compress(feat) for i, feat in enumerate(features)]
+    
+    
+    def autoencoders_decompress(self, latent_features: list) -> list:
+        return [self.autoencoders[i].decompress(feat) for i, feat in enumerate(latent_features)]
     

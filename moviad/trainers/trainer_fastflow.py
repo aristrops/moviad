@@ -79,17 +79,7 @@ class TrainerFastFlow(Trainer):
 
             if (epoch + 1) % evaluation_epoch_interval == 0 and epoch != 0:
                 print("Evaluating model...")
-                metrics_tuple = self.evaluator.evaluate(self.model)
-
-                metrics = {
-                    "img_roc_auc": metrics_tuple[0],
-                    "pxl_roc_auc": metrics_tuple[1],
-                    "img_f1": metrics_tuple[2],
-                    "pxl_f1": metrics_tuple[3],
-                    "img_pr_auc": metrics_tuple[4],
-                    "pxl_pr_auc": metrics_tuple[5],
-                    "pxl_au_pro": metrics_tuple[6],
-                }
+                metrics = self.evaluator.evaluate(self.model)
                 
                 if self.saving_criteria is not None and self.save_path is not None:
                     if self.saving_criteria(best_metrics, metrics): 
