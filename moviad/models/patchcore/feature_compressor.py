@@ -36,6 +36,7 @@ class CustomFeatureCompressor():
     #--------FEATURE COMPRESSION--------
     
     def get_and_compress_features(self, dataset, feature_extractor, return_sizes = False):
+        #feature_extractor.eval()
 
         all_compressed_features = None
         feature_sizes = []

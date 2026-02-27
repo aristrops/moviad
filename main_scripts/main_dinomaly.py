@@ -36,6 +36,10 @@ from sklearn.metrics import roc_auc_score, average_precision_score
 import itertools
 
 from moviad.utilities.configurations import TaskType
+from moviad.models.patchcore.product_quantizer import ProductQuantizer
+from moviad.models.patchcore.features_dataset import CompressedFeaturesDataset
+from moviad.models.patchcore.autoencoder import FeatureAutoencoder
+
 
 warnings.filterwarnings("ignore")
 
@@ -87,22 +91,10 @@ def train(item):
     image_size = (448, 448)
     crop_size = 392
 
-    compressor = CustomFeatureCompressor(device, quality=args.quality, img_size=image_size, feature_compression_method=None, compression_ratio=1)
-
-    train_data = MVTecDataset(TaskType.SEGMENTATION, args.data_path, item, "train", compressor, args.compress_images, args.quality, img_size=image_size)
-    train_data.load_dataset()
-    print(f"Length of training data: {len(train_data)}")
-
-    test_data = MVTecDataset(TaskType.SEGMENTATION, args.data_path, item, "test", compressor, args.compress_images, args.quality, img_size=image_size)
-    test_data.load_dataset()
-    print(f"Length of testing data: {len(test_data)}")
-    train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=0,
-                                                   drop_last=True)
-    test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False, num_workers=0)
-
+    #load feature extractor (encoder)
     encoder_name = 'deit_small_16'
     #encoder_name = 'dinov2reg_vit_base_14'
-    # encoder_name = 'dinov2reg_vit_large_14'
+
 
     target_layers = [2, 3, 4, 5, 6, 7, 8, 9]
     fuse_layer_encoder = [[0, 1, 2, 3], [4, 5, 6, 7]]
@@ -110,6 +102,70 @@ def train(item):
     # target_layers = list(range(4, 19))
 
     encoder = vit_encoder.load(encoder_name)
+    encoder.to(device)
+
+    if "ae" in args.feature_compression_method:
+        with torch.no_grad():
+            input_dummy = torch.randn((1, 3, 224, 224))
+            features_dummy = encoder(input_dummy.to(device))
+
+        autoencoders = nn.ModuleList()
+        for layer_features in features_dummy:
+            autoencoder = FeatureAutoencoder(in_channels=layer_features.shape[1], compression_ratio=0.5)
+            autoencoders.append(autoencoder)
+
+        optimizers = [torch.optim.Adam(ae.parameters(), lr=1e-3) for ae in autoencoders]
+    else:
+        autoencoders = None
+
+    feature_quantizer = ProductQuantizer(subspaces=None)
+    compressor = CustomFeatureCompressor(device, quality=args.quality, img_size=image_size, feature_compression_method=args.feature_compression_method, compression_ratio=args.sampling_ratio, quantizer=feature_quantizer, autoencoders=autoencoders)
+    
+    #define training set
+    train_data = MVTecDataset(TaskType.SEGMENTATION, args.data_path, item, "train", compressor, args.compress_images, args.quality, img_size=image_size)
+    train_data.load_dataset()
+    print(f"Length of training data: {len(train_data)}")
+
+    if args.feature_compression_method is not None:
+        if "pq" in args.feature_compression_method:
+            feature_vectors = compressor.collect_feature_vectors(train_data, encoder)
+            compressor.fit_quantizers(feature_vectors)
+        if "ae" in args.feature_compression_method:
+            train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=32, shuffle=True)
+            compressor.train_autoencoders(
+                train_dataloader=train_dataloader,
+                feature_extractor=encoder,
+                optimizers=optimizers,
+                device=device,
+                epochs=10,
+                noise_std=0.001,
+            )
+
+        train_dataset = CompressedFeaturesDataset(encoder, train_data, compressor, device)
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=train_dataset.collate_fn)
+    else:
+        train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=4, shuffle=True)
+
+    test_data = MVTecDataset(TaskType.SEGMENTATION, args.data_path, item, "test", compressor, args.compress_images, args.quality, img_size=image_size)
+    test_data.load_dataset()
+    print(f"Length of testing data: {len(test_data)}")
+    if args.feature_compression_method is not None:
+        if "pq" in args.feature_compression_method:
+            feature_vectors = compressor.collect_feature_vectors(test_data, encoder)
+            compressor.fit_quantizers(feature_vectors)
+        if "ae" in args.feature_compression_method:
+            test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=32, shuffle=True)
+            compressor.test_reconstruction(  # Only to check overfitting, in real cases test is likely not feasible
+                test_dataloader=test_dataloader,
+                feature_extractor=encoder,
+                device=device,
+            )
+        
+        test_dataset = CompressedFeaturesDataset(encoder, test_data, compressor, device, split = "test")   
+        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=False, collate_fn=test_dataset.collate_fn)
+    else:
+        test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=4, shuffle=False)
+
 
     if 'small' in encoder_name:
         embed_dim, num_heads = 384, 6
@@ -242,6 +298,8 @@ if __name__ == '__main__':
                         default='vitill_mvtec_sep_dinov2br_c392_en29_bn4dp2_de8_elaelu_md2_i1_it10k_sadm2e3_wd1e4_w1hcosa_ghmp09f01w1k_b16_ev_s1')
     parser.add_argument("--quality", type=int, default=50, help="Compression quality of images")
     parser.add_argument("--compress_images", action="store_true", help="Compress images using WEBP")
+    parser.add_argument("--feature_compression_method", type=str, default=None, nargs="+", help="Method for feature compression")
+    parser.add_argument("--sampling_ratio", type=float, default=1, help="Sampling ratio for random projection of features")
 
     args = parser.parse_args()
 
@@ -251,7 +309,7 @@ if __name__ == '__main__':
     logger = get_logger(args.save_name, os.path.join(args.save_dir, args.save_name))
     print_fn = logger.info
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = 'cuda:2' if torch.cuda.is_available() else 'cpu'
     print_fn(device)
 
     result_list = []

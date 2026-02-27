@@ -49,7 +49,10 @@ class Evaluator:
         pred_masks, pred_img_scores = (list(), list())
 
         for images, labels, masks, path in tqdm(self.test_dataloader, desc="Eval"):
-            images = [img.to(self.device) for img in images]
+            if isinstance(images, list):
+                images = [img.to(self.device) for img in images]
+            else:
+                images = images.to(self.device)
             #images = images.to(self.device)
             # get anomaly map and score
             with torch.no_grad():

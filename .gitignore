@@ -215,3 +215,7 @@ __MACOSX/
 .DS_Store
 ._*
 *.txt
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

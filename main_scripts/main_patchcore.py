@@ -172,23 +172,6 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
         print(f"Parameters of the feature extractor: {sizes["feature_extractor"]["params"]}")
         print(f"Total model size: {total_size: .2f} MB")
 
-        # save results to csv
-        csv_path = "quantized_patchcore_visa.csv"
-
-        # row = {"category": category,
-        #        "ad_layers": encode_ad_layers(ad_layers),
-        #        "quantize_mb": quantize_mb,
-        #        "img_roc": results["img_roc"],
-        #        "pxl_roc": results["pxl_roc"],
-        #        "f1_img": results["f1_img"],
-        #        "f1_pxl": results["f1_pxl"],
-        #        "img_pr": results["img_pr"],
-        #        "pxl_pr": results["pxl_pr"],
-        #        "pxl_pro": results["pxl_pro"],
-        #        "memory_bank_size_MB": sizes["memory_bank"]["size"], }
-
-        # append_results_to_csv(csv_path, row)
-
         # force garbage collector in case
         del patchcore
         del test_dataset
@@ -200,15 +183,58 @@ def train_patchcore(dataset_type: str, dataset_path: str, categories: str, backb
 
 
 def test_patchcore(dataset_type: str, dataset_path: str, categories: str, backbone: str, ad_layers: list,
-                   model_checkpoint_path, compress_images,
-                   quality, visual_test_path, feature_compression_method, sampling_ratio, pq_subspaces,
-                   device: torch.device, max_dataset_size: int = None, quantize_mb: bool = False):
+                    compress_images,
+                    quality, feature_compression_method, sampling_ratio, pq_subspaces, save_path: str,
+                    device: torch.device, max_dataset_size: int = None, quantize_mb: bool = False):
+    # initialize the feature extractor, compressor and quantizer
     feature_extractor = CustomFeatureExtractor(backbone, ad_layers, device, True, False, None)
     feature_quantizer = ProductQuantizer(subspaces=pq_subspaces)
+
+    import torch.nn as nn
+    with torch.no_grad():
+        input_dummy = torch.randn((1, 3, 224, 224))
+        features_dummy = feature_extractor(input_dummy.to(device))
+
+    autoencoders = nn.ModuleList()
+    for layer_features in features_dummy:
+        autoencoder = FeatureAutoencoder(in_channels=layer_features.shape[1], compression_ratio=0.5)
+        autoencoders.append(autoencoder)
+
+    optimizers = [torch.optim.Adam(ae.parameters(), lr=1e-3) for ae in autoencoders]
+
     compressor = CustomFeatureCompressor(device, feature_compression_method=feature_compression_method,
-                                         quality=quality, compression_ratio=sampling_ratio, quantizer=feature_quantizer)
+                                         quality=quality, compression_ratio=sampling_ratio, quantizer=feature_quantizer,
+                                         autoencoders=autoencoders)
 
     for category in categories:
+
+        print(f"Testing Pathcore for category: {category} \n")
+
+        if feature_compression_method is not None:
+             #define training dataset
+            if dataset_type == "mvtec":
+                train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train", compressor=compressor,
+                                            apply_compression=compress_images, quality=quality)
+            elif dataset_type == "visa":
+                train_dataset = VisaDataset(dataset_path, csv_path=os.path.join(dataset_path, "split_csv", "1cls.csv"),
+                                            split=Split.TRAIN, class_name=category)
+            train_dataset.load_dataset()
+
+            if "pq" in feature_compression_method:
+                feature_vectors = compressor.collect_feature_vectors(train_dataset, feature_extractor)
+                compressor.fit_quantizers(feature_vectors)
+            if "ae" in feature_compression_method:
+                train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
+                compressor.train_autoencoders(
+                    train_dataloader=train_dataloader,
+                    feature_extractor=feature_extractor,
+                    optimizers=optimizers,
+                    device=device,
+                    epochs=10,
+                    noise_std=0.001,
+                )
+
+        # define test dataset
         if dataset_type == "mvtec":
             test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test", compressor=compressor,
                                         apply_compression=compress_images, quality=quality)
@@ -222,54 +248,53 @@ def test_patchcore(dataset_type: str, dataset_path: str, categories: str, backbo
             test_dataset = torch.utils.data.Subset(test_dataset, range(max_dataset_size))
 
         if feature_compression_method is not None:
-            if "pq" in feature_compression_method:
-                feature_vectors = compressor.collect_feature_vectors(test_dataset, feature_extractor)
-                compressor.fit_quantizers(feature_vectors)
+            if "ae" in feature_compression_method:
+                test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True)
+                compressor.test_reconstruction(  
+                    test_dataloader=test_dataloader,
+                    feature_extractor=feature_extractor,
+                    device=device,
+                )
 
             test_dataset = CompressedFeaturesDataset(feature_extractor, test_dataset, compressor, device, split="test")
-            test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True,
-                                                          collate_fn=test_dataset.collaimte_fn)
+            test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True,
+                                                          collate_fn=test_dataset.collate_fn)
+
         else:
-            test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True)
+            test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
         print(f"Length test dataset: {len(test_dataset)}")
 
-        # load the model
+        #load the model state dict
+        save_path_category = os.path.join(save_path, "patchcore", category)
+        os.makedirs(save_path_category, exist_ok=True)
+        full_path = os.path.join(save_path_category,
+                                    f"{backbone}_compress_images_{compress_images}_feature_compression_{feature_compression_method}_sampling_{sampling_ratio}.pt")
+
+        # define the model
         patchcore = PatchCore(device, input_size=(224, 224), feature_extractor=feature_extractor,
                               compression_method=feature_compression_method, apply_quantization=quantize_mb)
-        patchcore.load_model(model_checkpoint_path)
+        patchcore.load_model(full_path)
         patchcore.to(device)
         patchcore.eval()
 
-        evaluator = Evaluator(test_dataloader, device)
-        img_roc, pxl_roc, f1_img, f1_pxl, img_pr, pxl_pr, pxl_pro = evaluator.evaluate(patchcore)
+        results = Evaluator.evaluate(patchcore, test_dataloader, device)
 
-        print("Evaluation performances:")
-        print(f"""
-        img_roc: {img_roc}
-        pxl_roc: {pxl_roc}
-        f1_img: {f1_img}
-        f1_pxl: {f1_pxl}
-        img_pr: {img_pr}
-        pxl_pr: {pxl_pr}
-        pxl_pro: {pxl_pro}
-        """)
+        #save results to csv
+        csv_path = "full_results_iot.csv"
 
-        # check for the visual test
-        if visual_test_path:
+        row = {"method": "patchcore",
+               "category": category,
+               "backbone": backbone,
+               "compress_images": compress_images,
+               "quality": quality,
+               "feature_compression_method": feature_compression_method,
+               "sampling_ratio": sampling_ratio,
+               "img_roc": results["img_roc_auc"],
+               "pxl_roc": results["pxl_roc_auc"],
+               "f1_img": results["img_f1"],
+               "f1_pxl": results["pxl_f1"],}
 
-            # Get output directory.
-            dirpath = pathlib.Path(visual_test_path)
-            dirpath.mkdir(parents=True, exist_ok=True)
-
-            for images, labels, masks, paths in tqdm(iter(test_dataloader)):
-                anomaly_maps, pred_scores = patchcore(images.to(device))
-
-                anomaly_maps = torch.permute(anomaly_maps, (0, 2, 3, 1))
-
-                for i in range(anomaly_maps.shape[0]):
-                    patchcore.save_anomaly_map(visual_test_path, anomaly_maps[i].cpu().numpy(), pred_scores[i],
-                                               paths[i],
-                                               labels[i], masks[i])
+        append_results_to_csv(csv_path, row)
 
 
 def main():
