@@ -208,6 +208,8 @@ plots.ipynb
 *.bin
 *.jpg
 *jpeg
+*.png
+*.pcd
 *npy
 *.idea
 *.pth

@@ -14,7 +14,7 @@ import warnings
 import torchvision
 from torchvision.models.feature_extraction import create_feature_extractor
 
-def create_fastflow(img_shape, backbone_name, compression_method, sampling_ratio = 1, device=None):
+def create_fastflow(img_shape, backbone_name, compression_method = None, sampling_ratio = 1, device=None):
     #backbone_name = "wide_resnet50_2"
 
     fast_flow_model = CompleteFastFlowModel(backbone_name,input_size= img_shape, normalize = True, compression_method = compression_method, sampling_ratio = sampling_ratio)
