@@ -385,3 +385,179 @@ def de_wide_resnet101_2(pretrained: bool = False, progress: bool = True, **kwarg
     kwargs['width_per_group'] = 64 * 2
     return _resnet('wide_resnet101_2', Bottleneck, [3, 4, 23, 3],
                    pretrained, progress, **kwargs)
+
+
+class MobileNetV2Decoder(ResNet):
+    """
+    Decoder paired with MobileNetV2Backbone + BN_layer_mobilenet.
+
+    Subclasses ResNet to reuse _make_layer (with deconv2x2 upsampling shortcuts)
+    and BasicBlock (with transposed-conv stride-2 path) unchanged.  The only
+    difference from de_resnet18/34 is the channel sequence, which mirrors the
+    MobileNetV2 encoder in reverse:
+
+        BN_layer_mobilenet output  →  (B, 192, H/32, W/32)
+        layer1: 192 → 96ch, ×2 up →  (B,  96, H/16, W/16)  ← mirrors C3
+        layer2:  96 → 32ch, ×2 up →  (B,  32, H/8,  W/8)   ← mirrors C2
+        layer3:  32 → 24ch, ×2 up →  (B,  24, H/4,  W/4)   ← mirrors C1
+
+    Returns [feat_c (24ch), feat_b (32ch), feat_a (96ch)], matching the
+    finest-first convention of de_resnet (_forward_impl returns
+    [feature_c, feature_b, feature_a]).
+
+    Channel constants are imported from the encoder file via the same
+    integer literals used in BN_layer_mobilenet, keeping both sides in sync.
+    """
+
+    # Mirror the encoder's channel constants (MobileNetV2Backbone.C1/C2/C3)
+    _C1: int = 24  # stride-4  features
+    _C2: int = 32  # stride-8  features
+    _C3: int = 96  # stride-16 features
+    _BN_OUT_C: int = 192  # BN_layer_mobilenet.BN_OUT_C
+
+    def __init__(
+            self,
+            layers: int = 2,
+            norm_layer: Optional[Callable[..., nn.Module]] = None,
+            **kwargs,  # absorbs unused kwargs (e.g. groups, width_per_group) for API parity
+    ) -> None:
+        # Bypass ResNet.__init__ entirely: we set up everything ourselves using
+        # the inherited _make_layer, which only depends on self.inplanes,
+        # self.dilation, self.groups, self.base_width, and self._norm_layer.
+        nn.Module.__init__(self)
+
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer
+
+        # _make_layer reads and mutates self.inplanes — start at BN_layer output
+        self.inplanes = self._BN_OUT_C  # 192
+        self.dilation = 1
+        self.groups = 1
+        self.base_width = 64
+
+        # Three upsampling stages, each ×2, mirroring the three encoder projections
+        self.layer1 = self._make_layer(BasicBlock, self._C3, layers, stride=2)  # 192→96
+        self.layer2 = self._make_layer(BasicBlock, self._C2, layers, stride=2)  # 96→32
+        self.layer3 = self._make_layer(BasicBlock, self._C1, layers, stride=2)  # 32→24
+
+        # Weight init identical to ResNet / BN_layer_mobilenet
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    # _make_layer, _forward_impl, and forward are all inherited from ResNet unchanged.
+
+
+def de_mobilenet_v2(layers: int = 2, **kwargs: Any) -> MobileNetV2Decoder:
+    """
+    Decoder counterpart to mobilenet_v2_rd4ad() in resnet.py.
+
+    Usage::
+
+        from resnet import mobilenet_v2_rd4ad
+        from resnet_decoder import de_mobilenet_v2
+
+        encoder, bn_layer = mobilenet_v2_rd4ad(pretrained=True)
+        decoder = de_mobilenet_v2()
+
+    The ``layers`` argument controls how many BasicBlocks are stacked per
+    upsampling stage and should match the ``layers`` passed to
+    BN_layer_mobilenet (default 2).
+    """
+    return MobileNetV2Decoder(layers=layers, **kwargs)
+
+
+class DeiTSmallDecoder(ResNet):
+    """
+    Decoder paired with DeiTSmallBackbone + BN_layer_deit.
+
+    Mirrors MobileNetV2Decoder exactly in structure, with updated channel
+    constants that match the DeiT-Small encoder:
+
+        BN_layer_deit output  →  (B, 384, H/32, W/32)   (BN_OUT_C = 384)
+        layer1: 384 → 384ch, ×2 up  →  (B, 384, H/16, W/16)  ← mirrors C3
+        layer2: 384 → 192ch, ×2 up  →  (B, 192, H/8,  W/8)   ← mirrors C2
+        layer3: 192 →  96ch, ×2 up  →  (B,  96, H/4,  W/4)   ← mirrors C1
+
+    Returns [feat_c (96ch), feat_b (192ch), feat_a (384ch)], matching the
+    finest-first convention of de_resnet:
+        _forward_impl returns [feature_c, feature_b, feature_a]
+
+    Each upsampling stage uses the inherited BasicBlock with deconv2x2 when
+    stride=2, so the decoder is a pure transposed-convolution mirror of the
+    encoder pyramid — exactly as in de_resnet18 / MobileNetV2Decoder.
+    """
+
+    # Mirror encoder channel constants (from DeiTSmallBackbone / BN_layer_deit)
+    _C1: int = 96  # stride-4  features
+    _C2: int = 192  # stride-8  features
+    _C3: int = 384  # stride-16 features  (= DeiT hidden dim)
+    _BN_OUT_C: int = 384  # BN_layer_deit.BN_OUT_C
+
+    def __init__(
+            self,
+            layers: int = 2,
+            norm_layer: Optional[Callable[..., nn.Module]] = None,
+            **kwargs,  # absorbs unused kwargs for API parity
+    ) -> None:
+        # Bypass ResNet.__init__ — set up everything via inherited _make_layer
+        nn.Module.__init__(self)
+
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer
+
+        # _make_layer reads and mutates self.inplanes — start at BN_layer output
+        self.inplanes = self._BN_OUT_C  # 384
+        self.dilation = 1
+        self.groups = 1
+        self.base_width = 64
+
+        # Three upsampling stages, each ×2 in spatial resolution
+        self.layer1 = self._make_layer(BasicBlock, self._C3, layers, stride=2)  # 384→384
+        self.layer2 = self._make_layer(BasicBlock, self._C2, layers, stride=2)  # 384→192
+        self.layer3 = self._make_layer(BasicBlock, self._C1, layers, stride=2)  # 192→96
+
+        # Weight init identical to ResNet / BN_layer_deit
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    # _make_layer, _forward_impl, and forward are all inherited from ResNet.
+    #
+    # _forward_impl applies the three layers in order and returns:
+    #   [feature_c (C1=96, stride-4), feature_b (C2=192, stride-8),
+    #    feature_a (C3=384, stride-16)]
+    # which is exactly the finest-first list that RD4AD's anomaly scoring
+    # expects from the de_resnet decoders.
+
+
+def de_deit_small(layers: int = 2, **kwargs: Any) -> DeiTSmallDecoder:
+    """
+    Decoder counterpart to deit_small_rd4ad() in resnet.py.
+
+    Usage::
+
+        from resnet import deit_small_rd4ad
+        from resnet_decoder import de_deit_small
+
+        encoder, bn_layer = deit_small_rd4ad(pretrained=True)
+        decoder = de_deit_small()
+
+        # typical RD4AD forward pass
+        features   = encoder(images)           # [a, b, c]
+        bottleneck = bn_layer(features)        # fused tensor
+        dec_feats  = decoder(bottleneck)       # reconstructed pyramid [c', b', a']
+
+    The ``layers`` argument controls the number of BasicBlocks stacked per
+    upsampling stage and should match the ``layers`` passed to
+    BN_layer_deit (default 2).
+    """
+    return DeiTSmallDecoder(layers=layers, **kwargs)

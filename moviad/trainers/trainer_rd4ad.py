@@ -23,8 +23,8 @@ class TrainerRD4AD(Trainer):
         for i in range(len(teacher_features)):
             loss += torch.mean(
                 1 - cos_loss(
-                    teacher_features[i].view(teacher_features[i].shape[0],-1),
-                    student_features[i].view(student_features[i].shape[0],-1)
+                    teacher_features[i].reshape(teacher_features[i].shape[0],-1),
+                    student_features[i].reshape(student_features[i].shape[0],-1)
                 )
             )
         return loss
@@ -63,7 +63,7 @@ class TrainerRD4AD(Trainer):
             
             self.model.train()
 
-            print(f"EPOCH: {epoch}")
+            print(f"\nEPOCH: {epoch}")
 
             #train the model
             batch_loss = 0

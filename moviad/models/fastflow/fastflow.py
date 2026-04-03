@@ -599,7 +599,7 @@ class CompleteFastFlowModel(nn.Module):
     def __init__(self,backbone_name, input_size, normalize, compression_method=None, sampling_ratio = 1):
         super().__init__()
 
-        if backbone_name in ["cait_m48_448", "deit_base_distilled_patch16_224"]:
+        if backbone_name in ["cait_m48_448", "deit_base_distilled_patch16_224", "deit_small_distilled_patch16_224", "deit_tiny_distilled_patch16_224"]:
             feature_extractor = timm.create_model(backbone_name, pretrained=True)
         elif backbone_name in ["resnet18", "wide_resnet50_2"]:
             feature_extractor = timm.create_model(
@@ -609,7 +609,7 @@ class CompleteFastFlowModel(nn.Module):
                 out_indices=[1, 2, 3],
             )
         elif backbone_name in ["mobilenet_v2"]:
-            return_nodes = ["features.3", "features.8", "features.14"]
+            return_nodes = ["features.10", "features.13", "features.16"]
             model = getattr(torchvision.models, backbone_name)(weights = "IMAGENET1K_V1")
             return_nodes = {layer: layer for layer in return_nodes} 
             feature_extractor = create_feature_extractor(model=model, return_nodes=return_nodes)
@@ -621,6 +621,12 @@ class CompleteFastFlowModel(nn.Module):
 
         if backbone_name in ["cait_m48_448", "deit_base_distilled_patch16_224"]:
             channels = [768]
+            scales = [16]
+        elif backbone_name in ["deit_small_distilled_patch16_224"]:
+            channels = [384]
+            scales = [16]
+        elif backbone_name in ["deit_tiny_distilled_patch16_224"]:
+            channels = [192]
             scales = [16]
         elif backbone_name in ["resnet18", "wide_resnet50_2", "mobilenet_v2"]:
             if backbone_name in ["mobilenet_v2"]:
@@ -658,7 +664,7 @@ class CompleteFastFlowModel(nn.Module):
         else:
             raise ValueError(
                 f"Backbone {backbone_name} is not supported. List of available backbones are "
-                "[cait_m48_448, deit_base_distilled_patch16_224, resnet18, wide_resnet50_2, mobilenet_v2]."
+                "[cait_m48_448, deit_base_distilled_patch16_224, deit_small_distilled_patch16_224, deit_tiny_distilled_patch16_224, resnet18, wide_resnet50_2, mobilenet_v2]."
             )
 
         if self.compression_method is not None and "random_sampling" in self.compression_method:
@@ -697,16 +703,12 @@ class CompleteFastFlowModel(nn.Module):
     
     #extract features from the backbone
     def _extract_features(self, input_tensor: Tensor) -> List[Tensor]:
-        if isinstance(self.feature_extractor, VisionTransformer):
-            # print("get_vit_features")
-            features = self._get_vit_features(input_tensor)
-        elif isinstance(self.feature_extractor, Cait):
-            # print("get_cait_features")
+        if isinstance(self.feature_extractor, Cait):
             features = self._get_cait_features(input_tensor)
-        elif isinstance:
-            # print("get_cnn_features")
+        elif isinstance(self.feature_extractor, VisionTransformer):
+            features = self._get_vit_features(input_tensor)
+        else:
             features = self._get_cnn_features(input_tensor)
-        
         return features
 
 

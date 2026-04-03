@@ -5,8 +5,8 @@ from torchvision.transforms import GaussianBlur
 import torch.nn.functional as F
 import numpy as np
 
-from moviad.models.components.rd4ad.resnet import resnet18
-from moviad.models.components.rd4ad.deresnet import de_resnet18
+import moviad.models.components.rd4ad.resnet as resnet
+import moviad.models.components.rd4ad.deresnet as deresnet
 
 class RD4AD(torch.nn.Module):
 
@@ -24,8 +24,12 @@ class RD4AD(torch.nn.Module):
         self.device = device
         self.input_size = input_size
 
-        self.encoder, self.bn = resnet18(pretrained=True)
-        self.decoder = de_resnet18(pretrained=False)
+        #self.encoder, self.bn = getattr(resnet, backbone_name)(pretrained=True)
+        self.encoder, self.bn = resnet.deit_small_rd4ad(pretrained=True)
+
+        # decoder_name = f"de_{backbone_name}"
+        # self.decoder = getattr(deresnet, decoder_name)(pretrained=False)
+        self.decoder = deresnet.de_deit_small(pretrained=False)
 
     def to(self, device: torch.device):
         self.encoder.to(device)

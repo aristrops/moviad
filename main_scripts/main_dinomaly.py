@@ -7,6 +7,7 @@ import time
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+from torchvision.transforms import transforms
 
 from moviad.dinomaly.dataset import get_data_transforms, get_strong_transforms
 from torchvision.datasets import ImageFolder
@@ -35,6 +36,7 @@ import logging
 from sklearn.metrics import roc_auc_score, average_precision_score
 import itertools
 
+from moviad.datasets.ad_datasets import AnoVoxDataset
 from moviad.utilities.configurations import TaskType
 from moviad.models.patchcore.product_quantizer import ProductQuantizer
 from moviad.models.patchcore.features_dataset import CompressedFeaturesDataset
@@ -84,7 +86,7 @@ def setup_seed(seed):
 
 
 def train(item):
-    setup_seed(1)
+    setup_seed(7)
     print_fn(item)
     num_epochs = 100
     batch_size = 16
@@ -95,6 +97,7 @@ def train(item):
     encoder_name = 'deit_small_16'
     #encoder_name = 'dinov2reg_vit_base_14'
 
+    print(f"Training Fastflow with {encoder_name} backbone on AnoVox dataset...")
 
     target_layers = [2, 3, 4, 5, 6, 7, 8, 9]
     fuse_layer_encoder = [[0, 1, 2, 3], [4, 5, 6, 7]]
@@ -104,70 +107,50 @@ def train(item):
     encoder = vit_encoder.load(encoder_name)
     encoder.to(device)
 
-    if "ae" in args.feature_compression_method:
-        with torch.no_grad():
-            input_dummy = torch.randn((1, 3, 224, 224))
-            features_dummy = encoder(input_dummy.to(device))
+    root_dir = "Anovox"
 
-        autoencoders = nn.ModuleList()
-        for layer_features in features_dummy:
-            autoencoder = FeatureAutoencoder(in_channels=layer_features.shape[1], compression_ratio=0.5)
-            autoencoders.append(autoencoder)
+    # define training and test datasets
+    transform = transforms.Compose([
+        transforms.Resize(
+            (224, 224),
+            antialias=True,
+        ),
+        transforms.ToTensor()
+    ])
 
-        optimizers = [torch.optim.Adam(ae.parameters(), lr=1e-3) for ae in autoencoders]
-    else:
-        autoencoders = None
+    sem_transform = transforms.Compose([
+        transforms.Resize(
+            (224, 224),
+            antialias=True,
+            interpolation=transforms.InterpolationMode.NEAREST
+        ),
+        transforms.ToTensor()
+    ])
 
-    feature_quantizer = ProductQuantizer(subspaces=None)
-    compressor = CustomFeatureCompressor(device, quality=args.quality, img_size=image_size, feature_compression_method=args.feature_compression_method, compression_ratio=args.sampling_ratio, quantizer=feature_quantizer, autoencoders=autoencoders)
-    
     #define training set
-    train_data = MVTecDataset(TaskType.SEGMENTATION, args.data_path, item, "train", compressor, args.compress_images, args.quality, img_size=image_size)
-    train_data.load_dataset()
+    train_data = AnoVoxDataset(
+        root_dir=root_dir,
+        mode="train",
+        normal_split_ratio=0.8,
+        transform=transform,
+        sem_transform=sem_transform
+    )
     print(f"Length of training data: {len(train_data)}")
 
-    if args.feature_compression_method is not None:
-        if "pq" in args.feature_compression_method:
-            feature_vectors = compressor.collect_feature_vectors(train_data, encoder)
-            compressor.fit_quantizers(feature_vectors)
-        if "ae" in args.feature_compression_method:
-            train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=32, shuffle=True)
-            compressor.train_autoencoders(
-                train_dataloader=train_dataloader,
-                feature_extractor=encoder,
-                optimizers=optimizers,
-                device=device,
-                epochs=10,
-                noise_std=0.001,
-            )
+    train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=4, shuffle=True)
 
-        train_dataset = CompressedFeaturesDataset(encoder, train_data, compressor, device)
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=train_dataset.collate_fn)
-    else:
-        train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=4, shuffle=True)
-
-    test_data = MVTecDataset(TaskType.SEGMENTATION, args.data_path, item, "test", compressor, args.compress_images, args.quality, img_size=image_size)
-    test_data.load_dataset()
+    test_data = AnoVoxDataset(
+        root_dir=root_dir,
+        mode="test",
+        transform=transform,
+        sem_transform=sem_transform
+    )
     print(f"Length of testing data: {len(test_data)}")
-    if args.feature_compression_method is not None:
-        if "pq" in args.feature_compression_method:
-            feature_vectors = compressor.collect_feature_vectors(test_data, encoder)
-            compressor.fit_quantizers(feature_vectors)
-        if "ae" in args.feature_compression_method:
-            test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=32, shuffle=True)
-            compressor.test_reconstruction(  # Only to check overfitting, in real cases test is likely not feasible
-                test_dataloader=test_dataloader,
-                feature_extractor=encoder,
-                device=device,
-            )
-        
-        test_dataset = CompressedFeaturesDataset(encoder, test_data, compressor, device, split = "test")   
-        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=False, collate_fn=test_dataset.collate_fn)
-    else:
-        test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=4, shuffle=False)
+    test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=4, shuffle=False)
 
-
-    if 'small' in encoder_name:
+    if 'tiny' in encoder_name:
+        embed_dim, num_heads = 192, 3
+    elif 'small' in encoder_name:
         embed_dim, num_heads = 384, 6
     elif 'base' in encoder_name:
         embed_dim, num_heads = 768, 12
@@ -175,7 +158,7 @@ def train(item):
         embed_dim, num_heads = 1024, 16
         target_layers = [4, 6, 8, 10, 12, 14, 16, 18]
     else:
-        raise "Architecture not in small, base, large."
+        raise "Architecture not in tiny, small, base, large."
 
     bottleneck = []
     decoder = []
@@ -217,8 +200,8 @@ def train(item):
     epochs = 0
     best_auroc = -float("inf")
 
-    save_name = f"{encoder_name}_compress_images_{args.compress_images}_quality_{args.quality}.pt"
-    save_dir = os.path.join(args.save_dir, item)
+    save_name = f"{encoder_name}.pth"
+    save_dir = os.path.join(args.save_dir, "anovox", "dinomaly")
     os.makedirs(save_dir, exist_ok=True)
 
     for epoch in range(num_epochs):
@@ -296,38 +279,17 @@ if __name__ == '__main__':
     parser.add_argument('--save_dir', type=str, default='./saved_results')
     parser.add_argument('--save_name', type=str,
                         default='vitill_mvtec_sep_dinov2br_c392_en29_bn4dp2_de8_elaelu_md2_i1_it10k_sadm2e3_wd1e4_w1hcosa_ghmp09f01w1k_b16_ev_s1')
-    parser.add_argument("--quality", type=int, default=50, help="Compression quality of images")
-    parser.add_argument("--compress_images", action="store_true", help="Compress images using WEBP")
-    parser.add_argument("--feature_compression_method", type=str, default=None, nargs="+", help="Method for feature compression")
     parser.add_argument("--sampling_ratio", type=float, default=1, help="Sampling ratio for random projection of features")
 
     args = parser.parse_args()
 
-    item_list = ['carpet', 'grid', 'leather', 'tile', 'wood', 'bottle', 'cable', 'capsule',
-                 'hazelnut', 'metal_nut', 'pill', 'screw', 'toothbrush', 'transistor', 'zipper']
-    # item_list = ['leather']
+    item_list = ['full']
     logger = get_logger(args.save_name, os.path.join(args.save_dir, args.save_name))
     print_fn = logger.info
 
-    device = 'cuda:2' if torch.cuda.is_available() else 'cpu'
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print_fn(device)
 
     result_list = []
     for i, item in enumerate(item_list):
         auroc_sp, ap_sp, f1_sp, auroc_px, ap_px, f1_px, aupro_px = train(item)
-        result_list.append([item, auroc_sp, ap_sp, f1_sp, auroc_px, ap_px, f1_px, aupro_px])
-
-    mean_auroc_sp = np.mean([result[1] for result in result_list])
-    mean_ap_sp = np.mean([result[2] for result in result_list])
-    mean_f1_sp = np.mean([result[3] for result in result_list])
-
-    mean_auroc_px = np.mean([result[4] for result in result_list])
-    mean_ap_px = np.mean([result[5] for result in result_list])
-    mean_f1_px = np.mean([result[6] for result in result_list])
-    mean_aupro_px = np.mean([result[7] for result in result_list])
-
-    print_fn(result_list)
-    print_fn(
-        'Mean: I-Auroc:{:.4f}, I-AP:{:.4f}, I-F1:{:.4f}, P-AUROC:{:.4f}, P-AP:{:.4f}, P-F1:{:.4f}, P-AUPRO:{:.4f}'.format(
-            mean_auroc_sp, mean_ap_sp, mean_f1_sp,
-            mean_auroc_px, mean_ap_px, mean_f1_px, mean_aupro_px))
