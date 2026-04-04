@@ -86,7 +86,7 @@ def setup_seed(seed):
 
 
 def train(item):
-    setup_seed(7)
+    setup_seed(1)
     print_fn(item)
     num_epochs = 100
     batch_size = 16
@@ -94,7 +94,7 @@ def train(item):
     crop_size = 392
 
     #load feature extractor (encoder)
-    encoder_name = 'deit_small_16'
+    encoder_name = 'deit_tiny_16'
     #encoder_name = 'dinov2reg_vit_base_14'
 
     print(f"Training Fastflow with {encoder_name} backbone on AnoVox dataset...")
