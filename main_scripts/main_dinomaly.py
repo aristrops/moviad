@@ -84,7 +84,7 @@ def setup_seed(seed):
 
 
 def train(item):
-    setup_seed(1)
+    setup_seed(2)
     print_fn(item)
     num_epochs = 100
     batch_size = 16
@@ -135,6 +135,7 @@ def train(item):
             compressor.train_autoencoders(
                 train_dataloader=train_dataloader,
                 feature_extractor=encoder,
+
                 optimizers=optimizers,
                 device=device,
                 epochs=10,
@@ -166,8 +167,9 @@ def train(item):
     else:
         test_dataloader = torch.utils.data.DataLoader(test_data, batch_size=4, shuffle=False)
 
-
-    if 'small' in encoder_name:
+    if 'tiny' in encoder_name:
+        embed_dim, num_heads = 192, 3
+    elif 'small' in encoder_name:
         embed_dim, num_heads = 384, 6
     elif 'base' in encoder_name:
         embed_dim, num_heads = 768, 12
@@ -175,7 +177,7 @@ def train(item):
         embed_dim, num_heads = 1024, 16
         target_layers = [4, 6, 8, 10, 12, 14, 16, 18]
     else:
-        raise "Architecture not in small, base, large."
+        raise "Architecture not in tiny, small, base, large."
 
     bottleneck = []
     decoder = []
