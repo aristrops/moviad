@@ -86,7 +86,7 @@ def setup_seed(seed):
 
 
 def train(item):
-    setup_seed(1)
+    setup_seed(7)
     print_fn(item)
     num_epochs = 100
     batch_size = 16

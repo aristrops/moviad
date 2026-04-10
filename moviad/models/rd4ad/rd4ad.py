@@ -25,11 +25,11 @@ class RD4AD(torch.nn.Module):
         self.input_size = input_size
 
         #self.encoder, self.bn = getattr(resnet, backbone_name)(pretrained=True)
-        self.encoder, self.bn = resnet.deit_small_rd4ad(pretrained=True)
+        self.encoder, self.bn = resnet.deit_tiny_rd4ad(pretrained=True)
 
         # decoder_name = f"de_{backbone_name}"
         # self.decoder = getattr(deresnet, decoder_name)(pretrained=False)
-        self.decoder = deresnet.de_deit_small(pretrained=False)
+        self.decoder = deresnet.de_deit_tiny(pretrained=False)
 
     def to(self, device: torch.device):
         self.encoder.to(device)

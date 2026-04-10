@@ -561,3 +561,72 @@ def de_deit_small(layers: int = 2, **kwargs: Any) -> DeiTSmallDecoder:
     BN_layer_deit (default 2).
     """
     return DeiTSmallDecoder(layers=layers, **kwargs)
+
+
+class DeiTTinyDecoder(ResNet):
+    """
+    Decoder paired with DeiTTinyBackbone + BN_layer_deit_tiny.
+
+    Mirrors DeiTSmallDecoder exactly with channel constants halved to match
+    DeiT-Tiny's hidden dim of 192:
+
+        BN_layer_deit_tiny output →  (B, 192, H/32, W/32)   (BN_OUT_C = 192)
+        layer1: 192 → 192ch, ×2 up →  (B, 192, H/16, W/16)  ← mirrors C3
+        layer2: 192 →  96ch, ×2 up →  (B,  96, H/8,  W/8)   ← mirrors C2
+        layer3:  96 →  48ch, ×2 up →  (B,  48, H/4,  W/4)   ← mirrors C1
+
+    Returns [feat_c (48ch), feat_b (96ch), feat_a (192ch)], finest-first,
+    matching the de_resnet convention.
+    """
+
+    _C1: int     = 48   # stride-4  features
+    _C2: int     = 96   # stride-8  features
+    _C3: int     = 192  # stride-16 features (= DeiT-Tiny hidden dim)
+    _BN_OUT_C: int = 192  # BN_layer_deit_tiny.BN_OUT_C
+
+    def __init__(
+            self,
+            layers: int = 2,
+            norm_layer: Optional[Callable[..., nn.Module]] = None,
+            **kwargs,
+    ) -> None:
+        nn.Module.__init__(self)
+
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer
+
+        self.inplanes   = self._BN_OUT_C  # 192
+        self.dilation   = 1
+        self.groups     = 1
+        self.base_width = 64
+
+        self.layer1 = self._make_layer(BasicBlock, self._C3, layers, stride=2)  # 192→192
+        self.layer2 = self._make_layer(BasicBlock, self._C2, layers, stride=2)  # 192→96
+        self.layer3 = self._make_layer(BasicBlock, self._C1, layers, stride=2)  # 96→48
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+
+def de_deit_tiny(layers: int = 2, **kwargs: Any) -> DeiTTinyDecoder:
+    """
+    Decoder counterpart to deit_tiny_rd4ad() in resnet.py.
+
+    Usage::
+
+        from resnet import deit_tiny_rd4ad
+        from resnet_decoder import de_deit_tiny
+
+        encoder, bn_layer = deit_tiny_rd4ad(pretrained=True)
+        decoder = de_deit_tiny()
+
+        features   = encoder(images)       # [a, b, c]
+        bottleneck = bn_layer(features)    # fused tensor
+        dec_feats  = decoder(bottleneck)   # [c', b', a']
+    """
+    return DeiTTinyDecoder(layers=layers, **kwargs)

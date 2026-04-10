@@ -1091,3 +1091,263 @@ def deit_small_rd4ad(
     )
     bn_layer = BN_layer_deit(layers=2, **kwargs)
     return backbone, bn_layer
+
+
+# ── DEIT tiny backbone ─────────────────────────────────────────────────────────
+class DeiTTinyBackbone(nn.Module):
+    """
+    Wraps a pretrained DeiT-Tiny ViT and exposes three pseudo-hierarchical
+    feature maps matching the spatial-pyramid contract of the other backbones.
+
+    DeiT-Tiny: patch_size=16, hidden_dim=192, 12 transformer blocks.
+
+    Tapped stages (default: layers 3, 7, 11):
+        feature_a : (B, C1=48,  H/4,  W/4)   ← shallow (4× upsampled, proj)
+        feature_b : (B, C2=96,  H/8,  W/8)   ← mid     (2× upsampled, proj)
+        feature_c : (B, C3=192, H/16, W/16)  ← deep    (no upsampling, proj=identity)
+
+    Channel constants:
+        C1 = 48   (stride-4)
+        C2 = 96   (stride-8)
+        C3 = 192  (stride-16, = DeiT-Tiny hidden dim)
+    """
+
+    C1: int = 48   # stride-4
+    C2: int = 96   # stride-8
+    C3: int = 192  # stride-16  (= DeiT-Tiny hidden dim)
+
+    _DEIT_DIM: int = 192  # DeiT-Tiny token embedding dimension
+    _PATCH: int = 16
+
+    def __init__(
+            self,
+            pretrained: bool = True,
+            img_size: int = 224,
+            tap_layers: tuple = (3, 7, 11),
+    ):
+        super().__init__()
+
+        try:
+            import timm
+        except ImportError:
+            raise ImportError(
+                "timm is required for DeiTTinyBackbone.  "
+                "Install it with:  pip install timm"
+            )
+
+        assert len(tap_layers) == 3, "tap_layers must contain exactly 3 indices"
+        self.tap_layers = tap_layers
+        self.img_size = img_size
+        self._h_patches = img_size // self._PATCH
+        self._w_patches = img_size // self._PATCH
+
+        # ── Load DeiT-Tiny from timm ─────────────────────────────────────────
+        weights_key = "deit_tiny_patch16_224.fb_in1k" if pretrained else "deit_tiny_patch16_224"
+        self._vit = timm.create_model(
+            weights_key,
+            pretrained=pretrained,
+            img_size=img_size,
+            num_classes=0,
+        )
+        for p in self._vit.patch_embed.parameters():
+            p.requires_grad_(False)
+
+        D = self._DEIT_DIM  # 192
+
+        # ── 1×1 projection convolutions ──────────────────────────────────────
+        self.proj_c = nn.Sequential(
+            nn.Conv2d(D, self.C3, kernel_size=1, bias=False),
+            nn.BatchNorm2d(self.C3),
+            nn.ReLU(inplace=True),
+        )
+        self.proj_b = nn.Sequential(
+            nn.Conv2d(D, self.C2, kernel_size=1, bias=False),
+            nn.BatchNorm2d(self.C2),
+            nn.ReLU(inplace=True),
+        )
+        self.proj_a = nn.Sequential(
+            nn.Conv2d(D, self.C1, kernel_size=1, bias=False),
+            nn.BatchNorm2d(self.C1),
+            nn.ReLU(inplace=True),
+        )
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def _tokens_to_map(self, tokens: Tensor, h: int, w: int) -> Tensor:
+        B, N, D = tokens.shape
+        assert N == h * w
+        return tokens.transpose(1, 2).reshape(B, D, h, w)
+
+    def _run_vit_with_taps(self, x: Tensor):
+        import torch.nn.functional as F
+
+        vit = self._vit
+        x = vit.patch_embed(x)
+        B = x.shape[0]
+        cls_token = vit.cls_token.expand(B, -1, -1)
+        x = torch.cat([cls_token, x], dim=1)
+        x = vit.pos_drop(x + vit.pos_embed)
+
+        taps = {}
+        for idx, block in enumerate(vit.blocks):
+            x = block(x)
+            if idx in self.tap_layers:
+                taps[idx] = x[:, 1:, :]
+
+        return [taps[i] for i in self.tap_layers]
+
+    def forward(self, x: Tensor) -> List[Tensor]:
+        import torch.nn.functional as F
+
+        B, C, H, W = x.shape
+        h = H // self._PATCH
+        w = W // self._PATCH
+
+        shallow_tok, mid_tok, deep_tok = self._run_vit_with_taps(x)
+
+        deep_map  = self._tokens_to_map(deep_tok, h, w)
+        feature_c = self.proj_c(deep_map)                              # (B, C3, h,   w)
+
+        mid_map   = self._tokens_to_map(mid_tok, h, w)
+        mid_up    = F.interpolate(mid_map, scale_factor=2, mode='bilinear', align_corners=False)
+        feature_b = self.proj_b(mid_up)                                # (B, C2, 2h,  2w)
+
+        sha_map   = self._tokens_to_map(shallow_tok, h, w)
+        sha_up    = F.interpolate(sha_map, scale_factor=4, mode='bilinear', align_corners=False)
+        feature_a = self.proj_a(sha_up)                                # (B, C1, 4h,  4w)
+
+        return [feature_a, feature_b, feature_c]
+
+
+# ── BN_layer_deit_tiny ────────────────────────────────────────────────────────
+
+class BN_layer_deit_tiny(nn.Module):
+    """
+    BN_layer adapted for DeiTTinyBackbone.
+
+    Mirrors BN_layer_deit exactly, with channel constants halved to match
+    DeiT-Tiny's hidden dim of 192:
+
+        conv1 path : x[0] (C1=48,  stride-4)  → OUT_C (192) at stride-16
+                     via two consecutive stride-2 conv3×3  (48→96→192)
+        conv3 path : x[1] (C2=96,  stride-8)  → OUT_C (192) at stride-16
+                     via one stride-2 conv3×3  (96→192)
+        x[2]       : (C3=192, stride-16) passed through directly
+        cat        → (B, OUT_C*3=576, H/16, W/16)
+        bn_layer   → (B, BN_OUT_C=192, H/32, W/32)
+    """
+
+    OUT_C: int    = 192  # = C3 = DeiT-Tiny hidden dim
+    BN_OUT_C: int = 192  # output consumed by DeiTTinyDecoder
+
+    def __init__(
+            self,
+            layers: int,
+            norm_layer: Optional[Callable[..., nn.Module]] = None,
+            **kwargs,
+    ):
+        super().__init__()
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer
+
+        self.groups     = 1
+        self.base_width = 64
+        self.dilation   = 1
+
+        C1, C2, C3   = DeiTTinyBackbone.C1, DeiTTinyBackbone.C2, DeiTTinyBackbone.C3
+        OUT_C        = self.OUT_C    # 192
+        BN_OUT_C     = self.BN_OUT_C # 192
+
+        self.relu = nn.ReLU(inplace=True)
+
+        # conv1 path: 48 → 96 → 192 (two stride-2 convs)
+        self.conv1 = conv3x3(C1,       OUT_C // 2, stride=2)  # 48  → 96,  stride 4→8
+        self.bn1   = norm_layer(OUT_C // 2)
+        self.conv2 = conv3x3(OUT_C // 2, OUT_C,    stride=2)  # 96  → 192, stride 8→16
+        self.bn2   = norm_layer(OUT_C)
+
+        # conv3 path: 96 → 192 (one stride-2 conv)
+        self.conv3 = conv3x3(C2, OUT_C, stride=2)             # 96  → 192, stride 8→16
+        self.bn3   = norm_layer(OUT_C)
+
+        # bn_layer input: OUT_C * 3 = 576
+        self.inplanes = OUT_C * 3  # 576
+        self.bn_layer = self._make_layer(BN_OUT_C, layers, stride=2)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def _make_layer(self, planes: int, blocks: int,
+                    stride: int = 1, dilate: bool = False) -> nn.Sequential:
+        norm_layer       = self._norm_layer
+        downsample       = None
+        previous_dilation = self.dilation
+
+        if dilate:
+            self.dilation *= stride
+            stride = 1
+
+        if stride != 1 or self.inplanes != planes * AttnBasicBlock.expansion:
+            downsample = nn.Sequential(
+                conv1x1(self.inplanes, planes * AttnBasicBlock.expansion, stride),
+                norm_layer(planes * AttnBasicBlock.expansion),
+            )
+
+        layers: List[nn.Module] = []
+        layers.append(
+            AttnBasicBlock(self.inplanes, planes, stride, downsample,
+                           self.groups, self.base_width, previous_dilation, norm_layer)
+        )
+        self.inplanes = planes * AttnBasicBlock.expansion
+        for _ in range(1, blocks):
+            layers.append(
+                AttnBasicBlock(self.inplanes, planes,
+                               groups=self.groups, base_width=self.base_width,
+                               dilation=self.dilation, norm_layer=norm_layer)
+            )
+        return nn.Sequential(*layers)
+
+    def _forward_impl(self, x: List[Tensor]) -> Tensor:
+        # x[0]: (B, 48,  H/4,  W/4)
+        l1 = self.relu(self.bn1(self.conv1(x[0])))  # → (B,  96, H/8,  W/8)
+        l1 = self.relu(self.bn2(self.conv2(l1)))     # → (B, 192, H/16, W/16)
+
+        # x[1]: (B, 96,  H/8,  W/8)
+        l2 = self.relu(self.bn3(self.conv3(x[1])))  # → (B, 192, H/16, W/16)
+
+        # x[2]: (B, 192, H/16, W/16) — no projection needed
+        feature = torch.cat([l1, l2, x[2]], dim=1)  # → (B, 576, H/16, W/16)
+
+        output = self.bn_layer(feature)              # → (B, 192, H/32, W/32)
+        return output.contiguous()
+
+    def forward(self, x: List[Tensor]) -> Tensor:
+        return self._forward_impl(x)
+
+
+# ── Factory function ──────────────────────────────────────────────────────────
+
+def deit_tiny_rd4ad(
+        pretrained: bool = True,
+        progress: bool = True,
+        img_size: int = 224,
+        tap_layers: tuple = (3, 7, 11),
+        **kwargs: Any,
+):
+    backbone = DeiTTinyBackbone(
+        pretrained=pretrained,
+        img_size=img_size,
+        tap_layers=tap_layers,
+    )
+    bn_layer = BN_layer_deit_tiny(layers=2, **kwargs)
+    return backbone, bn_layer
