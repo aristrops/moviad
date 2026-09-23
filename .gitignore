@@ -221,3 +221,4 @@ __pycache__/
 *.pyd
 *.png
 *.pcd
+*.yaml

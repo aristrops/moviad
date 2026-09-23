@@ -10,15 +10,15 @@ import numpy as np
 import random
 import os
 
-from moviad.dinomaly.models.uad import ViTill
-from moviad.dinomaly.models import vit_encoder
-from moviad.dinomaly.dinov1.utils import trunc_normal_
-from moviad.dinomaly.models.vision_transformer import Block as VitBlock, bMlp, LinearAttention2
+from moviad.models.dinomaly.models.uad import ViTill
+from moviad.models.dinomaly.models import vit_encoder
+from moviad.models.dinomaly.dinov1.utils import trunc_normal_
+from moviad.models.dinomaly.models.vision_transformer import Block as VitBlock, bMlp, LinearAttention2
 from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset
 from moviad.models.patchcore.feature_compressor import CustomFeatureCompressor
-from moviad.dinomaly.utils import evaluation_batch, global_cosine_hm_percent, WarmCosineScheduler
+from moviad.models.dinomaly.utils import evaluation_batch, global_cosine_hm_percent, WarmCosineScheduler
 from functools import partial
-from moviad.dinomaly.optimizers import StableAdamW
+from moviad.models.dinomaly.optimizers import StableAdamW
 import warnings
 import logging
 
