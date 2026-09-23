@@ -14,10 +14,9 @@ import warnings
 import torchvision
 from torchvision.models.feature_extraction import create_feature_extractor
 
-def create_fastflow(img_shape, backbone_name, compression_method, sampling_ratio = 1, device=None):
-    #backbone_name = "wide_resnet50_2"
+def create_fastflow(img_shape, backbone_name, ad_layers, compression_method, sampling_ratio = 1, device=None):
 
-    fast_flow_model = CompleteFastFlowModel(backbone_name,input_size= img_shape, normalize = True, compression_method = compression_method, sampling_ratio = sampling_ratio)
+    fast_flow_model = CompleteFastFlowModel(backbone_name, ad_layers, input_size= img_shape, normalize = True, compression_method = compression_method, sampling_ratio = sampling_ratio)
     fast_flow_module = FastflowModel(input_size = img_shape,flow_steps=8,conv3x3_only=False,hidden_ratio=1.0,channels=fast_flow_model.channels,scales=fast_flow_model.scales)
     fast_flow_model.fast_flow_module = fast_flow_module
 
@@ -596,7 +595,7 @@ class AnomalyMapGenerator(nn.Module):
 
 
 class CompleteFastFlowModel(nn.Module):
-    def __init__(self,backbone_name, input_size, normalize, compression_method=None, sampling_ratio = 1):
+    def __init__(self,backbone_name, ad_layers, input_size, normalize, compression_method=None, sampling_ratio = 1):
         super().__init__()
 
         if backbone_name in ["cait_m48_448", "deit_base_distilled_patch16_224"]:
@@ -609,9 +608,8 @@ class CompleteFastFlowModel(nn.Module):
                 out_indices=[1, 2, 3],
             )
         elif backbone_name in ["mobilenet_v2"]:
-            return_nodes = ["features.3", "features.8", "features.14"]
             model = getattr(torchvision.models, backbone_name)(weights = "IMAGENET1K_V1")
-            return_nodes = {layer: layer for layer in return_nodes} 
+            return_nodes = {layer: layer for layer in ad_layers}
             feature_extractor = create_feature_extractor(model=model, return_nodes=return_nodes)
         
         self.input_size = input_size

@@ -15,17 +15,17 @@ from moviad.models.dinomaly.models import vit_encoder
 from moviad.models.dinomaly.dinov1.utils import trunc_normal_
 from moviad.models.dinomaly.models.vision_transformer import Block as VitBlock, bMlp, LinearAttention2
 from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset
-from moviad.models.patchcore.feature_compressor import CustomFeatureCompressor
-from moviad.models.dinomaly.utils import evaluation_batch, global_cosine_hm_percent, WarmCosineScheduler
+from moviad.utilities.feature_compressor import CustomFeatureCompressor
+from moviad.models.dinomaly.utils import evaluation_batch, global_cosine_hm_percent, WarmCosineScheduler, ViTFeatureExtractor
 from functools import partial
-from moviad.models.dinomaly.optimizers import StableAdamW
+from moviad.models.dinomaly.optimizers.StableAdamW import StableAdamW
 import warnings
 import logging
 
 from moviad.utilities.configurations import TaskType
 from moviad.models.patchcore.product_quantizer import ProductQuantizer
 from moviad.models.patchcore.features_dataset import CompressedFeaturesDataset
-from moviad.models.patchcore.autoencoder import FeatureAutoencoder
+from moviad.utilities.autoencoder import ViTFeatureAutoencoder
 
 
 warnings.filterwarnings("ignore")
@@ -70,8 +70,7 @@ def setup_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 # function to set up the model
-def create_dinomaly(encoder_name: str, device: torch.device):
-    target_layers = [2, 3, 4, 5, 6, 7, 8, 9]
+def create_dinomaly(encoder_name: str, device: torch.device, compression_method: str):
     fuse_layer_encoder = [[0, 1, 2, 3], [4, 5, 6, 7]]
     fuse_layer_decoder = [[0, 1, 2, 3], [4, 5, 6, 7]]
 
@@ -84,11 +83,8 @@ def create_dinomaly(encoder_name: str, device: torch.device):
         embed_dim, num_heads = 384, 6
     elif 'base' in encoder_name:
         embed_dim, num_heads = 768, 12
-    elif 'large' in encoder_name:
-        embed_dim, num_heads = 1024, 16
-        target_layers = [4, 6, 8, 10, 12, 14, 16, 18]
     else:
-        raise ValueError("Architecture not in tiny, small, base, large.")
+        raise ValueError("Architecture not in tiny, small, base.")
 
     bottleneck = nn.ModuleList([bMlp(embed_dim, embed_dim * 4, embed_dim, drop=0.2)])
 
@@ -99,8 +95,9 @@ def create_dinomaly(encoder_name: str, device: torch.device):
         for _ in range(8)
     ])
 
-    model = ViTill(encoder=encoder, bottleneck=bottleneck, decoder=decoder, target_layers=target_layers,
-                   mask_neighbor_size=0, fuse_layer_encoder=fuse_layer_encoder, fuse_layer_decoder=fuse_layer_decoder)
+    model = ViTill(encoder=encoder, bottleneck=bottleneck, decoder=decoder,
+                   mask_neighbor_size=0, fuse_layer_encoder=fuse_layer_encoder, fuse_layer_decoder=fuse_layer_decoder,
+                   compression_method=compression_method)
     model = model.to(device)
 
     trainable = nn.ModuleList([bottleneck, decoder])
@@ -117,15 +114,17 @@ def create_dinomaly(encoder_name: str, device: torch.device):
 
 
 def train_dinomaly(dataset_path: str, category: str, encoder_name: str, save_path: str, device: torch.device,
-                   compress_images: bool, quality: int, feature_compression_method: str, sampling_ratio: int,
+                   compress_images: bool, quality: int, feature_compression_method: str, sampling_ratio: float,
                    epochs: int = 100, seed: int = 2):
+
     setup_seed(seed)
     batch_size = 16
     image_size = (448, 448)
+    target_layers = [2, 3, 4, 5, 6, 7, 8, 9]
 
     # initialize model to get the feature extractor
-    feature_extractor = vit_encoder.load(encoder_name)
-    feature_extractor.to(device)
+    encoder = vit_encoder.load(encoder_name)
+    feature_extractor = ViTFeatureExtractor(encoder, target_layers, device)
 
     # initialize autoencoders
     autoencoders = None
@@ -137,7 +136,7 @@ def train_dinomaly(dataset_path: str, category: str, encoder_name: str, save_pat
 
         autoencoders = nn.ModuleList()
         for layer_features in features_dummy:
-            autoencoder = FeatureAutoencoder(in_channels=layer_features.shape[1], compression_ratio=0.5)
+            autoencoder = ViTFeatureAutoencoder(in_channels=layer_features.shape[-1], compression_ratio=0.5)
             autoencoders.append(autoencoder)
 
         optimizers = [torch.optim.Adam(ae.parameters(), lr=1e-3) for ae in autoencoders]
@@ -145,13 +144,14 @@ def train_dinomaly(dataset_path: str, category: str, encoder_name: str, save_pat
     # initialize feature compressor
     feature_quantizer = ProductQuantizer(subspaces=None)
     compressor = CustomFeatureCompressor(device, feature_compression_method=feature_compression_method, quality=quality,
-                                         compression_ratio=sampling_ratio, quantizer=feature_quantizer, img_size=image_size, autoencoders=autoencoders)
+                                         compression_ratio=sampling_ratio, quantizer=feature_quantizer, img_size=image_size,
+                                         autoencoders=autoencoders, num_register_tokens = feature_extractor.num_register_tokens)
 
     print(f"Training Dinomaly for category: {category} \n")
 
     # define training dataset
     train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train",
-                                 compressor=compressor, apply_compression=compress_images, quality=quality, img_size=image_size)
+                                 compressor=compressor, apply_image_compression=compress_images, quality=quality, img_size=image_size)
     train_dataset.load_dataset()
 
     # train compressor and compress features
@@ -178,9 +178,10 @@ def train_dinomaly(dataset_path: str, category: str, encoder_name: str, save_pat
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True)
     print(f"Length train dataset: {len(train_dataset)}")
 
+
     # define test dataset
     test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test",
-                                compressor=compressor, apply_compression=compress_images, quality=quality, img_size=image_size)
+                                compressor=compressor, apply_image_compression=compress_images, quality=quality, img_size=image_size)
     test_dataset.load_dataset()
 
     # compress features
@@ -193,7 +194,7 @@ def train_dinomaly(dataset_path: str, category: str, encoder_name: str, save_pat
     print(f"Length test dataset: {len(test_dataset)}")
 
     # define the model
-    model, trainable = create_dinomaly(encoder_name, device)
+    model, trainable = create_dinomaly(encoder_name, device, compression_method=feature_compression_method)
     model.train()
 
     total_iters = int(np.ceil(epochs * len(train_dataloader) / batch_size))
@@ -202,8 +203,6 @@ def train_dinomaly(dataset_path: str, category: str, encoder_name: str, save_pat
                             lr=2e-3, betas=(0.9, 0.999), weight_decay=1e-4, amsgrad=True, eps=1e-8)
     lr_scheduler = WarmCosineScheduler(optimizer, base_value=2e-3, final_value=2e-4, total_iters=total_iters,
                                        warmup_iters=100)
-
-    print(f"Train image number:{len(train_dataset)}")
 
     it = 0
     epoch_count = 0
@@ -217,7 +216,10 @@ def train_dinomaly(dataset_path: str, category: str, encoder_name: str, save_pat
         progress_bar = tqdm(train_dataloader, desc=f"Epoch {epoch + 1}", leave=True)
 
         for img in progress_bar:
-            img = img.to(device)
+            if isinstance(img, list):
+                img = [layer_features.to(device) for layer_features in img]
+            else:
+                img = img.to(device)
             en, de = model(img)
 
             p_final = 0.9
@@ -271,7 +273,7 @@ def train_dinomaly(dataset_path: str, category: str, encoder_name: str, save_pat
 
 
 def test_dinomaly(dataset_path: str, category: str, backbone: str, save_path: str, device: torch.device,
-                  compress_images: bool, quality: int, feature_compression_method: str, sampling_ratio: int):
+                  compress_images: bool, quality: int, feature_compression_method: str, sampling_ratio: float):
 
     image_size = (448, 448)
 
@@ -289,7 +291,7 @@ def test_dinomaly(dataset_path: str, category: str, backbone: str, save_path: st
 
         autoencoders = nn.ModuleList()
         for layer_features in features_dummy:
-            autoencoder = FeatureAutoencoder(in_channels=layer_features.shape[1], compression_ratio=0.5)
+            autoencoder = ViTFeatureAutoencoder(in_channels=layer_features.shape[-1], compression_ratio=0.5)
             autoencoders.append(autoencoder)
 
         optimizers = [torch.optim.Adam(ae.parameters(), lr=1e-3) for ae in autoencoders]
@@ -306,7 +308,7 @@ def test_dinomaly(dataset_path: str, category: str, backbone: str, save_path: st
     if "pq" in feature_compression_method or "ae" in feature_compression_method:
         # define training dataset
         train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train",
-                                     compressor=compressor, apply_compression=compress_images, quality=quality,
+                                     compressor=compressor, apply_image_compression=compress_images, quality=quality,
                                      img_size=image_size)
         train_dataset.load_dataset()
 
@@ -328,7 +330,7 @@ def test_dinomaly(dataset_path: str, category: str, backbone: str, save_path: st
 
     # define test dataset
     test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test",
-                                compressor=compressor, apply_compression=compress_images, quality=quality,
+                                compressor=compressor, apply_image_compression=compress_images, quality=quality,
                                 img_size=image_size)
     test_dataset.load_dataset()
 
@@ -367,7 +369,7 @@ def main():
     parser.add_argument("--mode", choices=["train", "test"], help="Script execution mode: train or test")
     parser.add_argument("--dataset_path", type=str, help="Path of the directory where the dataset is stored")
     parser.add_argument("--category", type=str, help="Dataset category to test")
-    parser.add_argument("--encoder_name", type=str, default="deit_small_16", help="ViT encoder name")
+    parser.add_argument("--encoder_name", type=str, default="deit_small_16", help="ViT encoder name") #["deit_small_16, dinov2reg_vit_base_14]"
     parser.add_argument("--compress_images", action="store_true", help="Compress images using JPEG or WEBP")
     parser.add_argument("--quality", type=int, default=50, help="Compression quality of images")
     parser.add_argument("--feature_compression_method", type=str, default=None, nargs="+", help="Method for feature compression")

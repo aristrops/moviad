@@ -7,6 +7,20 @@ from sklearn.cluster import KMeans
 import math
 
 
+def extract_features(encoder, x, target_layers, encoder_require_grad_layer):
+    encoder_require_grad_layer = encoder_require_grad_layer or []
+    x = encoder.prepare_tokens(x)
+    en_list = []
+    for i, blk in enumerate(encoder.blocks):
+        if i <= target_layers[-1]:
+            x = blk(x)
+        else:
+            continue
+        if i in target_layers:
+            en_list.append(x)
+    return en_list
+
+
 class ViTill(nn.Module):
     def __init__(
             self,
@@ -90,21 +104,7 @@ class ViTill(nn.Module):
         return en, de
 
     def extract_features(self, x):
-        x = self.encoder.prepare_tokens(x)
-        en_list = []
-        for i, blk in enumerate(self.encoder.blocks):
-            if i <= self.target_layers[-1]:
-                if i in self.encoder_require_grad_layer:
-                    x = blk(x)
-                else:
-                    with torch.no_grad():
-                        x = blk(x)
-            else:
-                continue
-            if i in self.target_layers:
-                en_list.append(x)
-
-        return en_list
+        return extract_features(self.encoder, x, self.target_layers, self.encoder_require_grad_layer)
 
     def fuse_feature(self, feat_list):
         return torch.stack(feat_list, dim=1).mean(dim=1)

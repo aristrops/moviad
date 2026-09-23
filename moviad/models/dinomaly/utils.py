@@ -16,6 +16,8 @@ import math
 
 import pickle
 
+from moviad.models.dinomaly.models.uad import extract_features
+
 def modify_grad(x, inds, factor=0.):
     inds = inds.expand_as(x)
     x[inds] *= factor
@@ -831,3 +833,16 @@ class WarmCosineScheduler(_LRScheduler):
             return [self.final_value for base_lr in self.base_lrs]
         else:
             return [self.schedule[self.last_epoch] for base_lr in self.base_lrs]
+
+
+class ViTFeatureExtractor:
+
+    def __init__(self, encoder, target_layers, device, encoder_require_grad_layer=None):
+        self.encoder = encoder.to(device)
+        self.encoder.eval()
+        self.target_layers = target_layers
+        self.encoder_require_grad_layer = encoder_require_grad_layer or []
+        self.num_register_tokens = getattr(encoder, "num_register_tokens", 0)
+
+    def __call__(self, x):
+        return extract_features(self.encoder, x, self.target_layers, self.encoder_require_grad_layer)

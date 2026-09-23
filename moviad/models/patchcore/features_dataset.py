@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset
 
 from moviad.utilities.custom_feature_extractor_trimmed import CustomFeatureExtractor
-from moviad.models.patchcore.feature_compressor import CustomFeatureCompressor
+from moviad.utilities.feature_compressor import CustomFeatureCompressor
 
 
 class CompressedFeaturesDataset(Dataset):

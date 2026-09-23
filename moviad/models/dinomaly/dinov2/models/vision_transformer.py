@@ -18,7 +18,11 @@ import torch.utils.checkpoint
 from torch.nn.init import trunc_normal_
 
 # from dinov2.layers import Mlp, PatchEmbed, SwiGLUFFNFused, MemEffAttention, NestedTensorBlock as Block
-from moviad.models.dinomaly.dinov2.layers import Mlp, PatchEmbed, SwiGLUFFNFused, MemEffAttention, Block
+from moviad.models.dinomaly.dinov2.layers.mlp import Mlp
+from moviad.models.dinomaly.dinov2.layers.patch_embed import PatchEmbed
+from moviad.models.dinomaly.dinov2.layers.swiglu_ffn import SwiGLUFFNFused
+from moviad.models.dinomaly.dinov2.layers.attention import MemEffAttention
+from moviad.models.dinomaly.dinov2.layers.block import Block
 
 logger = logging.getLogger("dinov2")
 

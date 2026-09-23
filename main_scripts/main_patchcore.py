@@ -9,13 +9,13 @@ from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset
 from moviad.utilities.custom_feature_extractor_trimmed import CustomFeatureExtractor
 from moviad.models.patchcore.patchcore import PatchCore
 from moviad.trainers.trainer_patchcore import TrainerPatchCore
-from moviad.utilities.configurations import TaskType, Split
+from moviad.utilities.configurations import TaskType
 from moviad.utilities.evaluator import Evaluator
 from moviad.models.patchcore.features_dataset import CompressedFeaturesDataset
-from moviad.models.patchcore.feature_compressor import CustomFeatureCompressor
+from moviad.utilities.feature_compressor import CustomFeatureCompressor
 from moviad.models.patchcore.product_quantizer import ProductQuantizer
 
-from moviad.models.patchcore.autoencoder import FeatureAutoencoder
+from moviad.utilities.autoencoder import FeatureAutoencoder
 
 
 def train_patchcore(dataset_path: str, category: str, backbone: str, ad_layers: list,
@@ -47,7 +47,7 @@ def train_patchcore(dataset_path: str, category: str, backbone: str, ad_layers: 
 
     # define training dataset
     train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train",
-                                 compressor=compressor, apply_compression=compress_images, quality=quality)
+                                 compressor=compressor, apply_image_compression=compress_images, quality=quality)
     train_dataset.load_dataset()
 
     # train compressors and compress features
@@ -76,7 +76,7 @@ def train_patchcore(dataset_path: str, category: str, backbone: str, ad_layers: 
 
     # define test dataset
     test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test",
-                                compressor=compressor, apply_compression=compress_images, quality=quality)
+                                compressor=compressor, apply_image_compression=compress_images, quality=quality)
     test_dataset.load_dataset()
 
     # compress features
@@ -147,7 +147,7 @@ def test_patchcore(dataset_path: str, category: str, backbone: str, ad_layers: l
     if "pq" in feature_compression_method or "ae" in feature_compression_method:
          # define training dataset
         train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train", compressor=compressor,
-                                        apply_compression=compress_images, quality=quality)
+                                        apply_image_compression=compress_images, quality=quality)
 
         train_dataset.load_dataset()
 
@@ -169,7 +169,7 @@ def test_patchcore(dataset_path: str, category: str, backbone: str, ad_layers: l
 
     # define test dataset
     test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test", compressor=compressor,
-                                    apply_compression=compress_images, quality=quality)
+                                    apply_image_compression=compress_images, quality=quality)
     test_dataset.load_dataset()
 
     if feature_compression_method is not None:

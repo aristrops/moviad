@@ -95,7 +95,7 @@ class MVTecDataset(IadDataset):
         category: str,
         split: Split,
         compressor: CustomFeatureCompressor = None,
-        apply_compression: bool = False,
+        apply_image_compression: bool = False,
         quality: int = 50,
         norm: bool = True,
         img_size=(224, 224),
@@ -114,22 +114,24 @@ class MVTecDataset(IadDataset):
         self.split = split
         self.samples: pd.DataFrame = None
         self.preload_imgs = preload_imgs
-        self.apply_compression = apply_compression
-        self.quality = quality
 
+        self.apply_image_compression = apply_image_compression
+        self.quality = quality
+        self.compressor = compressor
+        if self.apply_image_compression and self.compressor is None:
+            raise ValueError("apply_image_compression=True requires a compressor instance")
+
+        # define list of transformations to apply
         t_list = []
 
-        if self.apply_compression:
+        if self.apply_image_compression:
             t_list.append(
-                lambda img: compressor.apply_image_compression(
+                lambda img: self.compressor.apply_image_compression(
                     img, quality = self.quality))
         else:
             t_list.append(transforms.Resize(img_size, antialias=True))
         
         t_list.append(transforms.ToTensor())
-
-        if self.apply_compression and not norm:
-            t_list.append(transforms.Resize(img_size, antialias=True))
         
         if norm:
             t_list.append(transforms.Normalize(
@@ -178,7 +180,7 @@ class MVTecDataset(IadDataset):
             print("Dataset already loaded")
             return
 
-        if self.apply_compression:
+        if self.apply_image_compression:
             print(f"Applying WEBP image compression with quality of {self.quality}")
 
         root = Path(self.root_category)

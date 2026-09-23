@@ -8,16 +8,16 @@ import torch.nn as nn
 from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset
 from moviad.models.fastflow.fastflow import create_fastflow
 from moviad.trainers.trainer_fastflow import TrainerFastFlow
-from moviad.utilities.configurations import TaskType, Split
+from moviad.utilities.configurations import TaskType
 from moviad.utilities.evaluator import Evaluator
 from moviad.models.patchcore.features_dataset import CompressedFeaturesDataset
-from moviad.models.patchcore.feature_compressor import CustomFeatureCompressor
+from moviad.utilities.feature_compressor import CustomFeatureCompressor
 from moviad.models.patchcore.product_quantizer import ProductQuantizer
 
-from moviad.models.patchcore.autoencoder import FeatureAutoencoder
+from moviad.utilities.autoencoder import FeatureAutoencoder
 
 
-def train_fastflow(dataset_path: str, category: str, backbone: str, save_path: str, device: torch.device,
+def train_fastflow(dataset_path: str, category: str, backbone: str, ad_layers: list, save_path: str, device: torch.device,
                    compress_images: bool, quality: int, feature_compression_method: str, sampling_ratio: int, #IoT scenario params
                    epochs: int = 100):
     
@@ -27,7 +27,7 @@ def train_fastflow(dataset_path: str, category: str, backbone: str, save_path: s
         img_size = (224, 224)
 
     # initialize FastFlow model to get the feature extractor
-    tmp_model = create_fastflow(img_size, backbone, feature_compression_method, device=device)
+    tmp_model = create_fastflow(img_size, backbone, ad_layers, feature_compression_method, device=device)
     feature_extractor = tmp_model._extract_features
 
     # initialize autoencoders
@@ -51,7 +51,7 @@ def train_fastflow(dataset_path: str, category: str, backbone: str, save_path: s
 
     # define training dataset
     train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train",
-                                 compressor = compressor, apply_compression = compress_images, quality = quality, img_size=img_size)
+                                 compressor = compressor, apply_image_compression = compress_images, quality = quality, img_size=img_size)
     train_dataset.load_dataset()
 
     # train compressors and compress features
@@ -80,7 +80,7 @@ def train_fastflow(dataset_path: str, category: str, backbone: str, save_path: s
 
     #define test dataset
     test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test",
-                                compressor = compressor, apply_compression = compress_images, quality = quality, img_size=img_size)
+                                compressor = compressor, apply_image_compression = compress_images, quality = quality, img_size=img_size)
     test_dataset.load_dataset()
 
     if feature_compression_method is not None:
@@ -92,7 +92,7 @@ def train_fastflow(dataset_path: str, category: str, backbone: str, save_path: s
     print(f"Length test dataset: {len(test_dataset)}")
 
     # define the model
-    model = create_fastflow(img_size, backbone, feature_compression_method, sampling_ratio, device=device).to(device)
+    model = create_fastflow(img_size, backbone, ad_layers, feature_compression_method, sampling_ratio, device=device).to(device)
 
     trainer = TrainerFastFlow(
         model=model,
@@ -113,7 +113,7 @@ def train_fastflow(dataset_path: str, category: str, backbone: str, save_path: s
     gc.collect()
 
 
-def test_fastflow(dataset_path: str, category: str, backbone: str, save_path: str, device: torch.device,
+def test_fastflow(dataset_path: str, category: str, backbone: str, ad_layers: list, save_path: str, device: torch.device,
                   compress_images: bool, quality: int, feature_compression_method: str, sampling_ratio: int):
     
     if backbone == "cait_m48_448":
@@ -122,7 +122,7 @@ def test_fastflow(dataset_path: str, category: str, backbone: str, save_path: st
         img_size = (224, 224)
 
     # initialize FastFlow model to get the feature extractor
-    tmp_model = create_fastflow(img_size, backbone, feature_compression_method, device=device)
+    tmp_model = create_fastflow(img_size, backbone, ad_layers, feature_compression_method, device=device)
     feature_extractor = tmp_model._extract_features
 
     # initialize autoencoders
@@ -146,7 +146,7 @@ def test_fastflow(dataset_path: str, category: str, backbone: str, save_path: st
 
     if "pq" in feature_compression_method or "ae" in feature_compression_method:
         train_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "train",
-                                     compressor=compressor, apply_compression=compress_images, quality=quality,
+                                     compressor=compressor, apply_image_compression=compress_images, quality=quality,
                                      img_size=img_size)
         train_dataset.load_dataset()
 
@@ -168,7 +168,7 @@ def test_fastflow(dataset_path: str, category: str, backbone: str, save_path: st
 
     # define test dataset
     test_dataset = MVTecDataset(TaskType.SEGMENTATION, dataset_path, category, "test",
-                                compressor=compressor, apply_compression=compress_images, quality=quality,
+                                compressor=compressor, apply_image_compression=compress_images, quality=quality,
                                 img_size=img_size)
     test_dataset.load_dataset()
 
@@ -181,7 +181,7 @@ def test_fastflow(dataset_path: str, category: str, backbone: str, save_path: st
     print(f"Length test dataset: {len(test_dataset)}")
 
     # define and load the model
-    model = create_fastflow(img_size, backbone, feature_compression_method, sampling_ratio, device=device).to(device)
+    model = create_fastflow(img_size, backbone, ad_layers, feature_compression_method, sampling_ratio, device=device).to(device)
     model.eval()
     state_dict = torch.load(save_path, map_location=device)
     model.load_state_dict(state_dict)
@@ -207,6 +207,7 @@ def main():
     parser.add_argument("--dataset_path", type=str, help="Path of the directory where the dataset is stored")
     parser.add_argument("--category", type=str, help="Dataset category to test")
     parser.add_argument("--backbone", type=str, help="Model backbone")
+    parser.add_argument("--ad_layers", type=str, nargs="+", help="List of ad layers")
     parser.add_argument("--compress_images", action="store_true", help="Compress images using JPEG or WEBP")
     parser.add_argument("--quality", type=int, default=50, help="Compression quality of images")
     parser.add_argument("--feature_compression_method", type=str, default=None, nargs="+", help="Method for feature compression")
@@ -223,10 +224,10 @@ def main():
     device = torch.device(args.device)
 
     if args.mode == "train":
-        train_fastflow(args.dataset_path, args.category, args.backbone, args.save_path, device,
+        train_fastflow(args.dataset_path, args.category, args.backbone, args.ad_layers, args.save_path, device,
                        args.compress_images, args.quality, args.feature_compression_method, args.sampling_ratio, args.epochs)
     if args.mode == "test":
-        test_fastflow(args.dataset_path, args.category, args.backbone, args.save_path, device,
+        test_fastflow(args.dataset_path, args.category, args.backbone, args.ad_layers, args.save_path, device,
                       args.compress_images, args.quality, args.feature_compression_method, args.sampling_ratio)
 
 if __name__ == "__main__":
